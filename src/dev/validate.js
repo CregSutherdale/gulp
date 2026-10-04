@@ -62,7 +62,7 @@ async function run() {
     const lostHuman = round.targets.reduce((n, t) => n + (t.need0 - t.need), 0);
     const ok = won && used <= L.time * 0.75 && maxMove < 0.6 && lost === 0 && lostBot === 0 && lostHuman === 0 && won2;
     results.push({ id: L.id, name: L.name, won, used: +used.toFixed(1), time: L.time, frac: +(used / L.time).toFixed(2), objs: round.world.objects.length, maxMove: +maxMove.toFixed(2), worst, lost, stuck, finalR: +p.r.toFixed(2), lostBot, lostHuman, won2, humanT: +(s2 / 60).toFixed(1), ok });
-    log(`${ok ? 'PASS' : 'FAIL'}  L${String(L.id).padStart(2)} ${L.name.padEnd(22)} ${won ? 'won' : 'LOST'} in ${used.toFixed(1)}s / ${L.time}s  objs ${round.world.objects.length}  spawnMove ${maxMove.toFixed(2)}(${worst}) lost ${lost} stuck ${stuck}  r ${p.r.toFixed(2)}  [${tg}]  | erratic: ${won2 ? 'won' : 'NOT WON'} in ${(s2 / 60).toFixed(0)}s, targets lost bot ${lostBot} human ${lostHuman}, saved-by-fix ${round.rescued || 0}`);
+    log(`${ok ? 'PASS' : 'FAIL'}  L${String(L.id).padStart(2)} ${L.name.padEnd(22)} ${won ? 'won' : 'LOST'} in ${used.toFixed(1)}s / ${L.time}s  objs ${round.world.objects.length}  spawnMove ${maxMove.toFixed(2)}(${worst}) lost ${lost} stuck ${stuck}  r ${p.r.toFixed(2)}  [${tg}]  | erratic: ${won2 ? 'won' : 'NOT WON'} in ${(s2 / 60).toFixed(0)}s, targets lost bot ${lostBot} human ${lostHuman}, saved-by-fix ${round.rescued || 0} reclaimed ${round.reclaimed || 0}`);
     await new Promise((r) => setTimeout(r, 0));
   }
   const fails = results.filter((r) => !r.ok).length;

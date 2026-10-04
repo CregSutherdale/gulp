@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Gulp! level intro (dev)</title>
+<link rel="stylesheet" href="/src/ui/style.css">
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="touch"></div>
+<div id="stick"><div></div></div>
+<div id="ui"></div>
+<canvas id="confetti"></canvas>
+<div id="loading" class="loading"><div class="hole"></div><p>Getting hungry…</p></div>
+<script type="module" src="/src/main.js"></script>
+<script type="module">
+  // Dev-only: boot the real game, then open a level's intro card (the whole-board preview)
+  // the way the level map does: /game2.html?level=31  (level id; Season 2 is 31-45).
+  const id = +(new URLSearchParams(location.search).get('level') || 31);
+  const wait = (ms = 100) => new Promise((r) => setTimeout(r, ms));
+  while (!window.__game) await wait();
+  await wait(300);
+  const i = window.__game.LEVELS.findIndex((l) => l.id === id);
+  window.__game.startLevel(i);
+  // ?fix=1 previews the one-line patchProps fix: TINT parts only take the instance color
+  // (the engine's replace of 'vColor.xyz *= instanceColor.xyz;' never matches, because the
+  // shader still says '#include <color_vertex>' when onBeforeCompile runs).
+  if (new URLSearchParams(location.search).get('fix') === '1') {
+    const { ShaderChunk } = await import('three');
+    const m = window.__game.round.world.propMat, orig = m.onBeforeCompile;
+    m.onBeforeCompile = (sh, r) => {
+      orig(sh, r);
+      sh.vertexShader = sh.vertexShader.replace('#include <color_vertex>',
+        ShaderChunk.color_vertex.replace('vColor.xyz *= instanceColor.xyz;', 'vColor.xyz *= mix(vec3(1.0), instanceColor.xyz, tmask);'));
+    };
+    m.customProgramCacheKey = () => 'props-tint-fixed';
+    m.needsUpdate = true;
+  }
+  document.title = `intro L${id} (#${i})`;
+</script>
+</body>
+</html>

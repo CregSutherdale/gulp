@@ -271,9 +271,23 @@ export class Round {
       const t = o.body.translation();
       if (t.y < -1.5) { this.rescued = (this.rescued || 0) + 1; this.credit(o, this.nearestHole(t.x, t.z), t); }
     }
-    if (this.targets) {
-      this.auditT = (this.auditT || 0) - dt;
-      if (this.auditT <= 0) { this.auditT = 0.5; this.auditTargets(); }
+    this.auditT = (this.auditT || 0) - dt;
+    if (this.auditT <= 0) { this.auditT = 0.5; this.reclaimStrays(); if (this.targets) this.auditTargets(); }
+  }
+  // Safety net: a hard shove can pop a prop through the thin border wall, where no hole
+  // can reach it and the level could never finish. Put it back just inside the edge.
+  reclaimStrays() {
+    const hw = this.world.size.w / 2, hd = this.world.size.d / 2;
+    for (const o of this.world.objects) {
+      if (o.eaten || o.captured >= 0) continue;
+      const t = o.body.translation();
+      if (t.y < -0.5 || (Math.abs(t.x) <= hw + 0.2 && Math.abs(t.z) <= hd + 0.2)) continue;
+      const m = Math.min(1.5, Math.max(0.6, o.prop.fit * 0.6));
+      const x = Math.max(-hw + m, Math.min(hw - m, t.x)), z = Math.max(-hd + m, Math.min(hd - m, t.z));
+      o.body.setTranslation({ x, y: o.hh + 0.3, z }, true);
+      o.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      o.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      this.reclaimed = (this.reclaimed || 0) + 1;
     }
   }
   nearestHole(x, z) {
