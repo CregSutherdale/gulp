@@ -16,15 +16,17 @@ export const FIT = 0.9;    // an object drops in when fit <= FIT * hole diameter
 const FALLTHROUGH = groups(OBJ_BIT, OBJ_BIT); // touches nothing but other objects (and never walls: it's already in the shaft)
 
 export class Round {
-  constructor({ phys, renderer, kind, level, mapId, rivals = [], playerName, playerColor, skin, events, autoSteer = false }) {
+  constructor({ phys, renderer, kind, level, mapId, rivals = [], playerName, playerColor, skin, events, autoSteer = false, timeScale = 1 }) {
     this.phys = phys; this.renderer = renderer; this.kind = kind; this.events = events;
     this.level = level; this.autoSteer = autoSteer;
     this.time = 0; this.over = false; this.idleT = 0; this.paused = false;
+    this.boost = { magnetT: 0, freezeT: 0 };
+    this.overview = kind === 'level'; this.swoopT = 0;
     let data;
-    if (kind === 'level') {
+    if (kind === 'level' || kind === 'zenworld') {
       data = buildLevel(level); data.world = level.world;
       this.theme = WORLDS[level.world];
-      this.duration = level.time;
+      this.duration = kind === 'level' ? Math.round(level.time * timeScale) : 0;
     } else {
       const map = MAPS[mapId];
       this.theme = THEMES[map.theme];
@@ -80,7 +82,7 @@ export class Round {
     const n = this.holes.length;
     this.holes.forEach((h, i) => {
       if (h.isPlayer) {
-        const s = this.kind === 'level' ? this.level.start : [0, 0];
+        const s = this.level ? this.level.start : [0, 0];
         h.place(s[0], s[1]); return;
       }
       const a = (i / n) * Math.PI * 2;
@@ -93,6 +95,8 @@ export class Round {
   update(dt, input) {
     if (this.over || this.paused) return;
     this.time += dt;
+    if (this.boost.freezeT > 0) { this.boost.freezeT -= dt; this.frozen = (this.frozen || 0) + dt; if (this.duration) this.duration += dt; }
+    if (this.boost.magnetT > 0) { this.boost.magnetT -= dt; this.magnet(dt); }
     if (this.duration) {
       this.left = Math.max(0, this.duration - this.time);
       if (this.left <= 0) { this.timeUp(); return; }
@@ -103,7 +107,8 @@ export class Round {
     this.phys.step();
     this.checkEaten(dt);
     this.checkHoleVsHole();
-    this.world.sync();
+    this.world.sync(dt);
+    if (this.kind === 'zenworld') this.zenTick(dt);
     for (const h of this.holes) {
       const before = h.target;
       h.applyRadius(false, dt); h.updateVisual(dt, this.time);
@@ -114,6 +119,24 @@ export class Round {
     this.writeHoleUniforms();
     this.updateCamera(dt);
     if (this.kind === 'zen' && this.world.eatenValue >= this.world.totalValue * 0.985) this.finish('cleared');
+  }
+
+  // Zen boards never run out: eaten things come back after a while, away from the
+  // hole, with a pop. The hole stops growing at a cozy size for the board.
+  zenTick(dt) {
+    this.zenT = (this.zenT || 0) - dt;
+    const p = this.player, capR = 3.4;
+    const capMass = (capR * capR - 0.25) / 0.0436;
+    if (p.mass > capMass) p.mass = capMass;
+    if (this.zenT > 0) return;
+    this.zenT = 0.5;
+    let n = 0;
+    for (const o of this.world.objects) {
+      if (!o.eaten || !o.respawnAt || o.respawnAt > this.time) continue;
+      if (Math.hypot(o.home[0] - p.x, o.home[1] - p.z) < p.r + o.prop.fit + 2) continue;
+      this.world.revive(o); o.respawnAt = 0;
+      if (++n >= 6) break; // trickle back, never all at once
+    }
   }
   sizeLevel(h) { return Math.max(1, Math.floor(Math.log(h.target / 0.5) / Math.log(1.22)) + 1); }
 
@@ -257,12 +280,16 @@ export class Round {
   }
   credit(o, h, t) {
     this.world.eat(o);
+    if (this.kind === 'zenworld') o.respawnAt = this.time + 30 + Math.random() * 30;
+    this.eatenCount = (this.eatenCount || 0) + (h && h.isPlayer ? 1 : 0);
     if (!h) return;
     h.feed(o.prop.value);
     if (this.targets && h.isPlayer) {
+      let hit = false;
       this.targets.forEach((tg, i) => {
-        if (tg.got < tg.need && tg.match(o)) { tg.got++; this.events.target?.(i, tg); }
+        if (tg.got < tg.need && tg.match(o)) { tg.got++; hit = true; this.events.target?.(i, tg); }
       });
+      if (hit && this.remaining() === 1) this.events.lastOne?.();
       this.checkWin();
     }
     this.events.ate?.(h, o, t);
@@ -279,6 +306,7 @@ export class Round {
     });
     if (changed) this.checkWin();
   }
+  remaining() { return this.targets ? this.targets.reduce((n, t) => n + Math.max(0, t.need - t.got), 0) : 0; }
   // Remaining target objects (for the "here are the stragglers" arrows).
   leftovers() {
     if (!this.targets) return [];
@@ -378,15 +406,62 @@ export class Round {
     ai.ix = ix; ai.iz = iz;
   }
 
+  // ------------------------------------------------------------------ helpers (boosters)
+  useBooster(kind) {
+    const h = this.player;
+    if (kind === 'magnet') this.boost.magnetT = 5;
+    else if (kind === 'freeze') this.boost.freezeT = 10;
+    else if (kind === 'grow') {
+      // Jump straight to the next size: r_next = 0.5 * 1.22^level.
+      const rNext = 0.5 * Math.pow(1.22, this.sizeLevel(h)) * 1.03;
+      h.mass = Math.max(h.mass, (rNext * rNext - 0.25) / 0.0436);
+      h.pulse = 1;
+    }
+  }
+  // Pull everything the hole could swallow toward it (and out of corners).
+  magnet(dt) {
+    const h = this.player, R2 = Math.pow(3 + h.r * 3.5, 2);
+    for (const o of this.world.objects) {
+      if (o.eaten || o.captured >= 0 || !this.fits(o, h) || !o.lastPos) continue;
+      const dx = h.x - o.lastPos[0], dz = h.z - o.lastPos[1], d2 = dx * dx + dz * dz;
+      if (d2 > R2 || d2 < 0.01) continue;
+      if (o.body.isSleeping()) o.body.wakeUp();
+      if (o.locked) { o.body.lockRotations(false, true); o.locked = false; }
+      const d = Math.sqrt(d2), m = o.prop.mass;
+      o.body.applyImpulse({ x: (dx / d) * m * 10 * dt, y: 0, z: (dz / d) * m * 10 * dt }, true);
+    }
+  }
+  // While a menu is up (level intro, pause, results): keep the camera and hole
+  // visuals alive without running any gameplay.
+  idle(dt) {
+    for (const h of this.holes) h.updateVisual(dt, this.time);
+    this.writeHoleUniforms();
+    this.updateCamera(dt);
+  }
+  endOverview() { if (this.overview) { this.overview = false; this.swoopT = 1.8; } }
+  celebrate() { this.overview = true; this.swoopT = 2.5; }
+
   // ------------------------------------------------------------------ camera + misc
   // Keep the hole a steady share of the screen width (portrait-aware), pitched 56
   // degrees. The zoom waits a beat after a growth so you SEE the hole get bigger.
   camTarget() {
     const p = this.player, cam = this.renderer.camera;
+    if (this.overview) {
+      // Frame the whole arena (portrait-aware), looking from the near side.
+      const tanV = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)), tanH = tanV * cam.aspect;
+      const W = this.world.size.w, Dp = this.world.size.d;
+      const dist = Math.max((W / 2 + 1.5) / tanH, (Dp * 0.5 + 1.5) / tanV * 0.62) * 1.05;
+      const pitch = THREE.MathUtils.degToRad(62);
+      const lz = this.over ? 0 : Dp * 0.3; // intro: push the board up, the card sits below it
+      return { x: 0, y: dist * Math.sin(pitch), z: dist * Math.cos(pitch) + lz, lx: 0, lz };
+    }
     const r = this.camR;
     const share = THREE.MathUtils.lerp(0.23, 0.15, Math.min(1, (r - 0.5) / 6));
     const tanH = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) * Math.min(cam.aspect, 1.1);
-    const D = Math.max(11, r / (share * tanH));
+    // Levels are small boards: always keep ~70% of the board's width in view so she
+    // can plan (like Hole It), and only pull back further as the hole grows.
+    const minD = this.kind === 'level' ? (this.world.size.w * 0.7 / 2) / tanH : this.kind === 'zenworld' ? (12 / 2) / tanH : 11;
+    const D = Math.max(minD, r / (share * tanH));
     const pitch = THREE.MathUtils.degToRad(56);
     const lead = 0.18;
     return { x: p.x + p.vx * lead, y: D * Math.sin(pitch), z: p.z + p.vz * lead + D * Math.cos(pitch), lx: p.x + p.vx * lead, lz: p.z + p.vz * lead };
@@ -404,7 +479,8 @@ export class Round {
       if (this.camRT > 0.35) this.camR += (p.rShown - this.camR) * Math.min(1, dt * 2.5);
     } else this.camRT = 0;
     const c = this.camTarget();
-    const k = 1 - Math.exp(-dt * 7);
+    this.swoopT = Math.max(0, this.swoopT - dt);
+    const k = 1 - Math.exp(-dt * (this.swoopT > 0 ? 2.4 : 7));
     this.camPos.x += (c.x - this.camPos.x) * k; this.camPos.z += (c.z - this.camPos.z) * k;
     this.camPos.y += (c.y - this.camPos.y) * k;
     this.camLook.x += (c.lx - this.camLook.x) * k; this.camLook.z += (c.lz - this.camLook.z) * k;
@@ -425,6 +501,7 @@ export class Round {
       if (h && h.alive) u[i].set(h.x, h.z, h.rShown, 1); else u[i].set(0, 0, 0, 0);
     }
   }
+  playTime() { return this.time - (this.frozen || 0); } // clock time that counts toward stars
   progress() { return this.world.eatenValue / Math.max(1, this.world.totalValue); }
   standings() { return [...this.holes].sort((a, b) => b.score - a.score); }
   timeUp() {

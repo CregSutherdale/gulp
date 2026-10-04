@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { PROPS } from './props.js';
 import { rng } from './maps.js';
+import { buildBackdrop } from './backdrops.js';
 
 export function buildLevel(level) {
   const R = rng(level.id * 1009 + 7);
@@ -167,5 +168,5 @@ export function buildArena(world, arena, root, patchGround) {
     g.add(m);
   }
   root.add(g);
-  return W;
+  return { ...W, backdrop: buildBackdrop(world, arena, root) };
 }

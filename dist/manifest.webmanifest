@@ -2,6 +2,7 @@
  "name": "Gulp!",
  "short_name": "Gulp!",
  "start_url": "./",
+ "scope": "./",
  "display": "fullscreen",
  "orientation": "portrait",
  "background_color": "#ffd6e7",

@@ -18,7 +18,7 @@ export class World {
     scene.add(this.root);
     // Phong gives the soft plastic-toy highlight; cheap enough for phones.
     this.propMat = patchProps(new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 38, specular: 0x2a2a2a }));
-    if (map.world) this.worldDef = buildArena(map.world, map.size, this.root, patchGround);
+    if (map.world) { this.worldDef = buildArena(map.world, map.size, this.root, patchGround); this.backdrop = this.worldDef.backdrop; }
     else this.buildGround(map.flats);
     this.spawnAll(map.spawns);
     this.totalValue = this.objects.reduce((s, o) => s + o.prop.value, 0);
@@ -89,7 +89,7 @@ export class World {
       mesh.setColorAt(slot, col);
       const o = {
         prop, body, collider, mesh, slot, hh, ring: -1, captured: -1, eaten: false, tint: tintIdx,
-        path: s.path ? { ...s.path } : null, locked: false, home: [s.x, s.z],
+        path: s.path ? { ...s.path } : null, locked: false, home: [s.x, s.z], rot0: s.rot,
       };
       // People and vehicles stay upright until a hole gets them.
       if (prop.walker || prop.driver) { body.lockRotations(true, false); o.locked = true; }
@@ -104,15 +104,21 @@ export class World {
     const t = o.body.translation(), r = o.body.rotation();
     if (o.lastPos) { o.lastPos[0] = t.x; o.lastPos[1] = t.z; } else o.lastPos = [t.x, t.z];
     _p.set(t.x, t.y, t.z); _q.set(r.x, r.y, r.z, r.w);
+    if (o.popT > 0) { const k = 1 - o.popT / 0.4; const e = 1 + 2.2 * Math.pow(k - 1, 3) + 1.2 * Math.pow(k - 1, 2); _s.setScalar(Math.max(0.01, e)); }
+    // Shrink a little as it sinks down the shaft: reads as being swallowed.
+    if (t.y < 0) _s.multiplyScalar(Math.max(0.45, 1 + t.y * 0.09));
     _m.compose(_p, _q, _s);
+    _s.setScalar(1);
     o.mesh.setMatrixAt(o.slot, _m);
   }
 
   // Sync awake bodies into their instance slots.
-  sync() {
+  sync(dt = 0) {
     const dirty = new Set();
     for (const o of this.objects) {
-      if (o.eaten || o.body.isSleeping()) continue;
+      if (o.eaten) continue;
+      if (o.popT > 0) { o.popT = Math.max(0, o.popT - dt); this.writeMatrix(o); dirty.add(o.mesh); continue; }
+      if (o.body.isSleeping()) continue;
       this.writeMatrix(o);
       dirty.add(o.mesh);
     }
@@ -126,6 +132,18 @@ export class World {
     this.byHandle.delete(o.collider.handle);
     this.phys.remove(o.body);
     this.eatenValue += o.prop.value;
+  }
+
+  // Bring an eaten object back at its home spot with a little pop-in (Zen boards).
+  revive(o) {
+    const { body, collider } = this.phys.createObject(o.prop, o.home[0], o.hh + 0.002, o.home[1], o.rot0 || 0);
+    o.body = body; o.collider = collider;
+    o.eaten = false; o.ring = -1; o.captured = -1; o.locked = false; o.popT = 0.4;
+    if (o.prop.walker || o.prop.driver) { body.lockRotations(true, false); o.locked = true; }
+    this.byHandle.set(collider.handle, o);
+    this.eatenValue = Math.max(0, this.eatenValue - o.prop.value);
+    this.writeMatrix(o);
+    o.mesh.instanceMatrix.needsUpdate = true;
   }
 
   setOnGround(o) {

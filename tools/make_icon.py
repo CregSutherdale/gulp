@@ -20,5 +20,5 @@ for size in (180, 512):
     for ox, oy, c in [(-0.55, -0.2, (255, 255, 255)), (0.5, -0.25, (80, 200, 255)), (0.1, 0.32, (255, 220, 60)), (-0.2, 0.3, (120, 230, 160)), (0.62, 0.15, (255, 255, 255))]:
         x, y = dx + ox * dr, dy + oy * dr
         d.rounded_rectangle([x - S * 0.014, y - S * 0.006, x + S * 0.014, y + S * 0.006], radius=S * 0.005, fill=c)
-    im.resize((size, size), Image.LANCZOS).save(f'dist/icon-{size}.png')
+    im.resize((size, size), Image.LANCZOS).save(f'assets/icons/icon-{size}.png')
 print('icons ok')
