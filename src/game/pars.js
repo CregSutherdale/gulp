@@ -1,3 +1,4 @@
+import { CHALLENGE_PARS } from './difficulty.js';
 // Star par times per level id: [3-star under, 2-star under] in seconds. Measured
 // from the validator's bot clear time t (2026-10-04 run): 3★ = 2.2t + 15, 2★ =
 // 3.4t + 25 (capped 10 s under the level's timer), rounded up to 5 s. The fail
@@ -12,7 +13,11 @@ export const PARS = {
 };
 
 // Starter levels (fallback content) and any level without a measured par.
+// Which star table counts: CHALLENGE (default) or the original relaxed pars. main.js sets it.
+let parMode = 'challenge';
+export function setParMode(m) { parMode = m; }
 export function parFor(level) {
+  if (parMode === 'challenge' && CHALLENGE_PARS[level.id]) return CHALLENGE_PARS[level.id];
   return PARS[level.id] || [Math.round(level.time * 0.45), Math.round(level.time * 0.75)];
 }
 export function starsFor(level, seconds) {

@@ -5,7 +5,8 @@ export const GROW = 0.0436;     // r^2 grows linearly with eaten value: area ~ v
 export const radiusFor = (mass) => Math.sqrt(R0 * R0 + GROW * mass);
 
 export class Hole {
-  constructor(k, phys, scene, { name, color, isPlayer = false, x = 0, z = 0, skin = null }) {
+  constructor(k, phys, scene, { name, color, isPlayer = false, x = 0, z = 0, skin = null, growMul = 1 }) {
+    this.growMul = growMul; // < 1 = grows slower (Challenge difficulty)
     this.k = k; this.phys = phys; this.name = name; this.color = color; this.isPlayer = isPlayer;
     this.x = x; this.z = z; this.vx = 0; this.vz = 0;
     this.mass = 0; this.score = 0; this.r = R0; this.rShown = R0;
@@ -17,7 +18,8 @@ export class Hole {
     scene.add(this.mesh);
     this.applyRadius(true);
   }
-  get target() { return radiusFor(this.mass); }
+  get target() { return Math.sqrt(R0 * R0 + GROW * this.growMul * this.mass); }
+  massFor(r) { return (r * r - R0 * R0) / (GROW * this.growMul); }
   depth() { return 3 + this.rShown * 2.6; }
   // Smoothly approach the target radius; rebuild the physical ring when the shown
   // radius drifts more than 2% from it so the ground cut and the real opening agree.

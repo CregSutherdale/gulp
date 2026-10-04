@@ -16,7 +16,7 @@ export const FIT = 0.9;    // an object drops in when fit <= FIT * hole diameter
 const FALLTHROUGH = groups(OBJ_BIT, OBJ_BIT); // touches nothing but other objects (and never walls: it's already in the shaft)
 
 export class Round {
-  constructor({ phys, renderer, kind, level, mapId, rivals = [], playerName, playerColor, skin, events, autoSteer = false, timeScale = 1 }) {
+  constructor({ phys, renderer, kind, level, mapId, rivals = [], playerName, playerColor, skin, events, autoSteer = false, timeScale = 1, growMul = 1 }) {
     this.phys = phys; this.renderer = renderer; this.kind = kind; this.events = events;
     this.level = level; this.autoSteer = autoSteer;
     this.time = 0; this.over = false; this.idleT = 0; this.paused = false;
@@ -39,7 +39,7 @@ export class Round {
     this.bounds = { x: this.world.size.w / 2 - 0.3, z: this.world.size.d / 2 - 0.3 };
     phys.setWalls(this.world.size.w / 2, this.world.size.d / 2);
     this.holes = [];
-    this.player = this.addHole({ name: playerName, color: playerColor, isPlayer: true, skin });
+    this.player = this.addHole({ name: playerName, color: playerColor, isPlayer: true, skin, growMul });
     for (const rv of rivals) this.addHole(rv);
     this.spreadHoles();
     this.zoneOf = new Map();
@@ -127,7 +127,7 @@ export class Round {
   zenTick(dt) {
     this.zenT = (this.zenT || 0) - dt;
     const p = this.player, capR = 3.4;
-    const capMass = (capR * capR - 0.25) / 0.0436;
+    const capMass = p.massFor(capR);
     if (p.mass > capMass) p.mass = capMass;
     if (this.zenT > 0) return;
     this.zenT = 0.5;
@@ -431,7 +431,7 @@ export class Round {
     else if (kind === 'grow') {
       // Jump straight to the next size: r_next = 0.5 * 1.22^level.
       const rNext = 0.5 * Math.pow(1.22, this.sizeLevel(h)) * 1.03;
-      h.mass = Math.max(h.mass, (rNext * rNext - 0.25) / 0.0436);
+      h.mass = Math.max(h.mass, h.massFor(rNext));
       h.pulse = 1;
     }
   }

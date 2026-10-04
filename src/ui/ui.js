@@ -243,7 +243,7 @@ export class UI {
     return `<div style="text-align:left">
       <div class="toggle">Sound effects <button class="switch ${save.sfx ? 'on' : ''}" data-k="sfx" aria-label="Sound effects"></button></div>
       <div class="toggle">Music <button class="switch ${save.music ? 'on' : ''}" data-k="music" aria-label="Music"></button></div>
-      <div class="toggle">Relaxed timers <button class="switch ${save.relaxed ? 'on' : ''}" data-k="relaxed" aria-label="Relaxed timers"></button></div>
+      <div class="toggle">Easy mode (longer timers, faster growing) <button class="switch ${save.relaxed ? 'on' : ''}" data-k="relaxed" aria-label="Easy mode"></button></div>
       ${zenOption ? `<div class="toggle">Auto-steer in Zen <button class="switch ${save.autoSteer ? 'on' : ''}" data-k="autoSteer" aria-label="Auto-steer"></button></div>` : ''}
     </div>`;
   }

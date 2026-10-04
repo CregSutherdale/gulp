@@ -1,3 +1,5 @@
+import { levelSetup } from './game/difficulty.js';
+import { setParMode } from './game/pars.js';
 import './game/props_cozy.js';
 import { initPhysics, PhysicsWorld } from './engine/physics.js';
 import { Renderer } from './engine/render.js';
@@ -82,7 +84,8 @@ function attract() {
 function startLevel(i) {
   demo = false; running = false; levelIdx = i;
   const level = LEVELS[i];
-  newRound({ kind: 'level', level, timeScale: save.relaxed ? 1.6 : 1 });
+  setParMode(save.relaxed ? 'relaxed' : 'challenge');
+  newRound({ kind: 'level', level, ...levelSetup(level, save.relaxed) });
   playMusic(level.world);
   helpers = { magnet: 1, freeze: 1, grow: 1 };
   ui.intro({
