@@ -13,7 +13,7 @@ import { THEMES } from './themes.js';
 const ZONE_PAD = 3.2;      // how far outside the rim objects switch onto the ring
 const NPC_RADIUS = 60;     // NPCs farther than this from the player stay frozen
 export const FIT = 0.9;    // an object drops in when fit <= FIT * hole diameter
-const FALLTHROUGH = groups(OBJ_BIT, OBJ_BIT); // touches nothing but other objects
+const FALLTHROUGH = groups(OBJ_BIT, OBJ_BIT); // touches nothing but other objects (and never walls: it's already in the shaft)
 
 export class Round {
   constructor({ phys, renderer, kind, level, mapId, rivals = [], playerName, playerColor, skin, events, autoSteer = false }) {
@@ -35,6 +35,7 @@ export class Round {
     renderer.setTheme(this.theme);
     this.world = new World(phys, renderer.scene, data, this.theme);
     this.bounds = { x: this.world.size.w / 2 - 0.3, z: this.world.size.d / 2 - 0.3 };
+    phys.setWalls(this.world.size.w / 2, this.world.size.d / 2);
     this.holes = [];
     this.player = this.addHole({ name: playerName, color: playerColor, isPlayer: true, skin });
     for (const rv of rivals) this.addHole(rv);
@@ -215,7 +216,8 @@ export class Round {
         for (const h of this.holes) {
           if (!h.alive || !this.fits(o, h)) continue;
           const dx = t.x - h.x, dz = t.z - h.z, d = Math.hypot(dx, dz) || 1;
-          if (d < h.r + 4) { vx += (dx / d) * 2.6; vz += (dz / d) * 2.6; }
+          const run = this.kind === 'level' ? 1.5 : 2.6;
+          if (d < h.r + 3.5) { vx += (dx / d) * run; vz += (dz / d) * run; }
         }
       }
       if (!vx && !vz && o.path) {

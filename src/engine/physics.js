@@ -12,11 +12,12 @@ export async function initPhysics() { await RAPIER.init(); R = RAPIER; }
 
 export const GROUND_BIT = 1 << 0;
 export const OBJ_BIT = 1 << 1;
-export const ringBit = (k) => 1 << (2 + k); // up to 14 holes
+export const WALL_BIT = 1 << 15;                // arena/map border, always solid
+export const ringBit = (k) => 1 << (2 + k);    // holes 0..12 use bits 2..14
 export const groups = (member, filter) => ((member & 0xffff) << 16) | (filter & 0xffff);
 
-export const OBJ_ON_GROUND = groups(OBJ_BIT, GROUND_BIT | OBJ_BIT);
-export const objOnRing = (k) => groups(OBJ_BIT, ringBit(k) | OBJ_BIT);
+export const OBJ_ON_GROUND = groups(OBJ_BIT, GROUND_BIT | OBJ_BIT | WALL_BIT);
+export const objOnRing = (k) => groups(OBJ_BIT, ringBit(k) | OBJ_BIT | WALL_BIT);
 
 const WEDGES = 28;
 
@@ -30,6 +31,16 @@ export class PhysicsWorld {
       R.ColliderDesc.cuboid(400, 5, 400).setCollisionGroups(groups(GROUND_BIT, OBJ_BIT)).setFriction(0.8), gb);
   }
   step() { this.world.step(); }
+
+  // Invisible border walls so nothing (fleeing people included) leaves the play area.
+  setWalls(halfW, halfD) {
+    if (this.walls) this.world.removeRigidBody(this.walls);
+    this.walls = this.world.createRigidBody(R.RigidBodyDesc.fixed());
+    const t = 0.5, h = 3, g = groups(WALL_BIT, OBJ_BIT);
+    for (const [x, z, hx, hz] of [[0, -halfD - t, halfW + 2 * t, t], [0, halfD + t, halfW + 2 * t, t], [-halfW - t, 0, t, halfD], [halfW + t, 0, t, halfD]]) {
+      this.world.createCollider(R.ColliderDesc.cuboid(hx, h, hz).setTranslation(x, h - 0.5, z).setCollisionGroups(g).setFriction(0.3), this.walls);
+    }
+  }
 
   // A ring is a fixed body we TELEPORT each frame (setTranslation) instead of
   // driving kinematically: a kinematic body would carry everything resting on it

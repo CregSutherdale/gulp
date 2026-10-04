@@ -2,13 +2,22 @@
 // from a link on a phone. Output: dist/gulp.html (artifact body: no <html>/<head>).
 import * as esbuild from 'esbuild';
 import fs from 'node:fs';
+import path from 'node:path';
 
-for (const f of ['src/game/props_cozy.js', 'src/game/levels.js']) {
-  if (!fs.existsSync(f)) { console.error(`missing ${f}`); process.exit(1); }
-}
+// Until the cozy content exists, ship the starter levels (same fallback as dev).
+const STUB = { 'props_cozy.js': 'export {};', 'levels.js': "export { LEVELS } from './levels_starter.js';" };
+const stubs = { name: 'content-stubs', setup(b) {
+  b.onResolve({ filter: /(props_cozy|levels)\.js$/ }, (a) => {
+    const f = path.resolve(a.resolveDir, a.path);
+    if (fs.existsSync(f)) return null;
+    return { path: f, namespace: 'stub' };
+  });
+  b.onLoad({ filter: /.*/, namespace: 'stub' }, (a) => ({ contents: STUB[path.basename(a.path)], resolveDir: path.dirname(a.path), loader: 'js' }));
+} };
+for (const f of ['src/game/props_cozy.js', 'src/game/levels.js']) if (!fs.existsSync(f)) console.log(`note: ${f} missing, using starter content`);
 const res = await esbuild.build({
   entryPoints: ['src/main.js'], bundle: true, minify: true, format: 'iife', target: ['es2020', 'safari15'],
-  loader: { '.m4a': 'dataurl' }, write: false, legalComments: 'none', define: { 'process.env.NODE_ENV': '"production"' },
+  loader: { '.m4a': 'dataurl' }, write: false, plugins: [stubs], legalComments: 'none', define: { 'process.env.NODE_ENV': '"production"' },
 });
 let js = res.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
 const css = fs.readFileSync('src/ui/style.css', 'utf8');

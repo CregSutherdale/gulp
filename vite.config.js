@@ -5,19 +5,7 @@ import path from 'node:path';
 
 const STUBS = {
   'props_cozy.js': 'export {};',
-  'levels.js': `export const LEVELS = [{
-    id: 1, name: 'Test Street', world: 'picnic', arena: { w: 18, d: 26 }, time: 90, start: [0, 10],
-    targets: [{ id: 'car', n: 'all' }, { id: 'bench', n: 2 }],
-    place: [
-      { op: 'grid', id: 'person', x: 0, z: 4, cols: 6, rows: 3, gap: 0.9, tint: 'cycle' },
-      { op: 'line', id: 'cone', x0: -6, z0: 7, x1: 6, z1: 7, n: 9 },
-      { op: 'pile', id: 'hydrant', x: -5, z: 0, n: 8, spread: 2 },
-      { op: 'pile', id: 'pot', x: 5, z: 0, n: 8, spread: 2, tint: 'random' },
-      { op: 'line', id: 'bench', x0: -4, z0: -3, x1: 4, z1: -3, n: 3 },
-      { op: 'ring', id: 'bush', x: 0, z: -7, n: 8, r: 3 },
-      { op: 'grid', id: 'car', x: 0, z: -9, cols: 2, rows: 1, gap: 3, rot: 1.57 },
-    ],
-  }];`,
+  'levels.js': "export { LEVELS } from '/src/game/levels_starter.js';",
 };
 
 export default {
