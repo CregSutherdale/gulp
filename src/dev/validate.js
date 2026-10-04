@@ -40,9 +40,29 @@ async function run() {
     const used = steps / 60;
     const tg = round.targets.map((t) => `${t.id}${t.tint !== undefined ? '#' + t.tint : ''} ${t.got}/${t.need}`).join(', ');
     const stuck = round.world.objects.filter((o) => !o.eaten && o.captured >= 0).length;
-    const ok = won && used <= L.time * 0.75 && maxMove < 0.6 && lost === 0;
-    results.push({ id: L.id, name: L.name, won, used: +used.toFixed(1), time: L.time, frac: +(used / L.time).toFixed(2), objs: round.world.objects.length, maxMove: +maxMove.toFixed(2), worst, lost, stuck, finalR: +p.r.toFixed(2), ok });
-    log(`${ok ? 'PASS' : 'FAIL'}  L${String(L.id).padStart(2)} ${L.name.padEnd(22)} ${won ? 'won' : 'LOST'} in ${used.toFixed(1)}s / ${L.time}s  objs ${round.world.objects.length}  spawnMove ${maxMove.toFixed(2)}(${worst}) lost ${lost} stuck ${stuck}  r ${p.r.toFixed(2)}  [${tg}]`);
+    const lostBot = round.targets.reduce((n, t) => n + (t.need0 - t.need), 0);
+
+    // Erratic "human" run on a fresh copy: zigzags, sudden reversals, full-speed
+    // sweeps. Must never lose a target and must still clear the level.
+    round.dispose();
+    let won2 = false;
+    round = new Round({ phys, renderer, kind: 'level', level: L, playerName: 'Human', playerColor: 0xff5fa2, events: { finished: (r, why) => { won2 = why === 'win'; } } });
+    const q = round.player; let ix = 0, iz = 0, switchT = 0, s2 = 0, rnd = 12345 + L.id;
+    const rand = () => ((rnd = (rnd * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    while (!round.over && s2 < limit * 3) {
+      if (round.paused) round.addTime(30);
+      switchT -= 1 / 60;
+      if (switchT <= 0) {
+        switchT = 0.25 + rand() * 0.9;
+        if (rand() < 0.55) { round.think(q, 1); ix = q.ai.ix; iz = q.ai.iz; } else { const a = rand() * Math.PI * 2; ix = Math.cos(a); iz = Math.sin(a); }
+      }
+      round.update(1 / 60, { x: ix, z: iz });
+      s2++;
+    }
+    const lostHuman = round.targets.reduce((n, t) => n + (t.need0 - t.need), 0);
+    const ok = won && used <= L.time * 0.75 && maxMove < 0.6 && lost === 0 && lostBot === 0 && lostHuman === 0 && won2;
+    results.push({ id: L.id, name: L.name, won, used: +used.toFixed(1), time: L.time, frac: +(used / L.time).toFixed(2), objs: round.world.objects.length, maxMove: +maxMove.toFixed(2), worst, lost, stuck, finalR: +p.r.toFixed(2), lostBot, lostHuman, won2, humanT: +(s2 / 60).toFixed(1), ok });
+    log(`${ok ? 'PASS' : 'FAIL'}  L${String(L.id).padStart(2)} ${L.name.padEnd(22)} ${won ? 'won' : 'LOST'} in ${used.toFixed(1)}s / ${L.time}s  objs ${round.world.objects.length}  spawnMove ${maxMove.toFixed(2)}(${worst}) lost ${lost} stuck ${stuck}  r ${p.r.toFixed(2)}  [${tg}]  | erratic: ${won2 ? 'won' : 'NOT WON'} in ${(s2 / 60).toFixed(0)}s, targets lost bot ${lostBot} human ${lostHuman}, saved-by-fix ${round.rescued || 0}`);
     await new Promise((r) => setTimeout(r, 0));
   }
   const fails = results.filter((r) => !r.ok).length;

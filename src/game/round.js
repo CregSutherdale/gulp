@@ -43,8 +43,8 @@ export class Round {
     this.zoneOf = new Map();
     this.camPos = new THREE.Vector3(); this.camLook = new THREE.Vector3();
     this.camR = this.player.rShown; this.camRT = 0;
-    this.targets = kind === 'level' ? this.makeTargets(level.targets) : null;
     this.settle();
+    this.targets = kind === 'level' ? this.makeTargets(level.targets) : null;
     this.snapCamera();
   }
 
@@ -53,7 +53,7 @@ export class Round {
       const match = (o) => o.prop.id === t.id && (t.tint === undefined || o.tint === t.tint);
       const total = this.world.objects.filter(match).length;
       const need = t.n === 'all' ? total : Math.min(t.n, total);
-      return { ...t, match, need, got: 0 };
+      return { ...t, match, need, need0: need, got: 0 };
     });
   }
   // Let freshly spawned props settle, then put them all to sleep so the round
@@ -236,26 +236,64 @@ export class Round {
   }
 
   checkEaten(dt) {
-    for (const o of this.world.objects) if (o.captured >= 0 && !o.eaten) this.tryEat(o, dt);
+    for (const o of this.world.objects) {
+      if (o.eaten) continue;
+      if (o.captured >= 0) { this.tryEat(o, dt); continue; }
+      if (o.body.isSleeping()) continue;
+      // Anything below ground went down SOME hole, even in physics edge cases where
+      // no hole had claimed it. Credit the nearest hole so nothing is ever lost.
+      const t = o.body.translation();
+      if (t.y < -1.5) { this.rescued = (this.rescued || 0) + 1; this.credit(o, this.nearestHole(t.x, t.z), t); }
+    }
+    if (this.targets) {
+      this.auditT = (this.auditT || 0) - dt;
+      if (this.auditT <= 0) { this.auditT = 0.5; this.auditTargets(); }
+    }
+  }
+  nearestHole(x, z) {
+    let best = null, bd = Infinity;
+    for (const h of this.holes) { if (!h.alive) continue; const d = Math.hypot(h.x - x, h.z - z); if (d < bd) { bd = d; best = h; } }
+    return best;
+  }
+  credit(o, h, t) {
+    this.world.eat(o);
+    if (!h) return;
+    h.feed(o.prop.value);
+    if (this.targets && h.isPlayer) {
+      this.targets.forEach((tg, i) => {
+        if (tg.got < tg.need && tg.match(o)) { tg.got++; this.events.target?.(i, tg); }
+      });
+      this.checkWin();
+    }
+    this.events.ate?.(h, o, t);
+  }
+  checkWin() {
+    if (this.targets.every((tg) => tg.got >= tg.need)) this.finish('win');
+  }
+  // Safety net: a level can never ask for more of something than still exists.
+  auditTargets() {
+    let changed = false;
+    this.targets.forEach((tg, i) => {
+      const left = this.world.objects.reduce((n, o) => n + (!o.eaten && tg.match(o) ? 1 : 0), 0);
+      if (tg.got + left < tg.need) { tg.need = tg.got + left; changed = true; this.events.target?.(i, tg); }
+    });
+    if (changed) this.checkWin();
+  }
+  // Remaining target objects (for the "here are the stragglers" arrows).
+  leftovers() {
+    if (!this.targets) return [];
+    const open = this.targets.filter((tg) => tg.got < tg.need);
+    return this.world.objects.filter((o) => !o.eaten && open.some((tg) => tg.match(o)));
   }
   tryEat(o, dt) {
     const t = o.body.translation();
     const h = this.holes[o.captured];
+    // Below ground = swallowed. Count it even if the hole has already moved on.
     const d = Math.hypot(t.x - h.x, t.z - h.z);
-    if (t.y < -(o.hh + 0.35) && d < h.r + 0.8) {
-      this.world.eat(o);
-      if (!h.alive) return;
-      h.feed(o.prop.value);
-      if (this.targets && h.isPlayer) {
-        this.targets.forEach((tg, i) => {
-          if (tg.got < tg.need && tg.match(o)) { tg.got++; this.events.target?.(i, tg); }
-        });
-        if (this.targets.every((tg) => tg.got >= tg.need)) this.finish('win');
-      }
-      this.events.ate?.(h, o, t);
-      return;
+    if (t.y < -(o.hh + 0.35)) {
+      if (d > h.r + 0.8) this.rescued = (this.rescued || 0) + 1; // the old code dropped these
+      this.credit(o, h.alive ? h : this.nearestHole(t.x, t.z), t); return;
     }
-    if (t.y < -40) { this.world.eat(o); return; }
     if (d > h.r + 2 && t.y > -0.5) { o.captured = -1; return; } // slid back out over the rim
     // Unstick: anything that stops sinking for a moment drops straight through. A
     // wedged object must never block the hole.

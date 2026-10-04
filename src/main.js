@@ -10,7 +10,7 @@ import { skinById, animateSkin } from './game/skins.js';
 import { UI } from './ui/ui.js';
 import { Icons } from './ui/icons.js';
 import { Confetti } from './ui/confetti.js';
-import { Sparkles, makeProgressRing } from './engine/fx.js';
+import { Sparkles, makeProgressRing, Markers } from './engine/fx.js';
 
 const canvas = document.getElementById('c');
 const renderer = new Renderer(canvas);
@@ -21,6 +21,7 @@ const ui = new UI(document.getElementById('ui'), audio, icons);
 const confetti = new Confetti(document.getElementById('confetti'));
 const save = loadSave();
 const sparkles = new Sparkles(renderer.scene);
+const markers = new Markers(renderer.scene);
 audio.setSfx(save.sfx); audio.setMusic(save.music);
 
 const RIVAL_POOL = [
@@ -248,6 +249,13 @@ function frame(now) {
       u.uColor.value.copy(p.mesh.userData.rimMat.color);
     }
     sparkles.update(dt);
+    // Bouncing arrows over the last few targets so stragglers are easy to find.
+    if (running && round.kind === 'level') {
+      round.markT = (round.markT || 0) - dt;
+      if (round.markT <= 0) { round.markT = 0.25; round.left5 = round.leftovers(); }
+      const show = round.left5 && (round.left5.length <= 4 || round.left / round.duration < 0.3) ? round.left5.slice(0, 8) : [];
+      markers.update(show, now / 1000);
+    } else markers.update([], 0);
     if (running) {
       hudT -= dt;
       if (hudT <= 0 || round.kind !== 'race') { ui.updateHud(round, renderer.camera); hudT = 0.2; }

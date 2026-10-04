@@ -65,3 +65,28 @@ export function makeProgressRing(color) {
   m.rotation.x = -Math.PI / 2; m.position.y = 0.03;
   return m;
 }
+
+// Bouncing arrows hovering over specific objects (the last few level targets).
+export class Markers {
+  constructor(scene) {
+    const g = new THREE.ConeGeometry(0.32, 0.6, 12); g.rotateX(Math.PI); g.translate(0, 0.3, 0);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffd23f });
+    const outline = new THREE.MeshBasicMaterial({ color: 0x2b2141, side: THREE.BackSide });
+    this.list = Array.from({ length: 8 }, () => {
+      const m = new THREE.Group();
+      const a = new THREE.Mesh(g, mat), o = new THREE.Mesh(g, outline);
+      o.scale.setScalar(1.18); o.position.y = -0.04;
+      m.add(o, a); m.visible = false; scene.add(m);
+      return m;
+    });
+  }
+  update(objs, t) {
+    this.list.forEach((m, i) => {
+      const o = objs[i];
+      if (!o || !o.lastPos) { m.visible = false; return; }
+      const y = o.hh * 2 + 0.6 + Math.abs(Math.sin(t * 4 + i)) * 0.45;
+      const s = Math.max(1, o.hh * 0.9);
+      m.visible = true; m.position.set(o.lastPos[0], y, o.lastPos[1]); m.scale.setScalar(s); m.rotation.y = t * 2;
+    });
+  }
+}
