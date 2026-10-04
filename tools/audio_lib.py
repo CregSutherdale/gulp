@@ -45,6 +45,14 @@ def decode(path, sr=44100, ch=2):
     return x.copy()
 
 
+def decode_array_mono(x, sr, target_sr):
+    """Mono mixdown of a float [n, ch] array, resampled to `target_sr` (polyphase)."""
+    from math import gcd
+    m = x.mean(axis=1) if x.ndim == 2 else x
+    g = gcd(int(sr), int(target_sr))
+    return resample_poly(m.astype(np.float64), target_sr // g, sr // g).astype(np.float32)
+
+
 def db(x):
     return 20 * np.log10(np.maximum(np.abs(x), 1e-12))
 
