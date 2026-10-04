@@ -110,9 +110,9 @@ function backdropStats() {
   let calls = 0, tris = 0;
   const rows = [];
   root.children.slice(1).forEach((o) => o.traverse((m) => {
-    if (!m.isMesh || !m.visible) return;
+    if (!(m.isMesh || m.isPoints) || !m.visible) return;
     const g = m.geometry;
-    const n = (g.index ? g.index.count : g.attributes.position.count) / 3;
+    const n = m.isPoints ? 0 : (g.index ? g.index.count : g.attributes.position.count) / 3;
     calls++; tris += n;
     rows.push(`${(m.name || m.material.type).padEnd(14)} ${String(Math.round(n)).padStart(6)}`);
   }));
@@ -149,8 +149,9 @@ async function addProps() {
   if (q.get('props') === '0') return;
   try {
     const cozy = await import('../game/props_cozy.js');
+    const wave2 = await import('../game/props_wave2.js').catch(() => ({}));
     const { PROPS, buildGeometry, colliderHalfHeight } = await import('../game/props.js');
-    const ids = (cozy.COZY_WORLDS?.[world] || []).filter((id) => PROPS[id] && PROPS[id].fit <= 2.6);
+    const ids = (cozy.COZY_WORLDS?.[world] || wave2.WAVE2_WORLDS?.[world] || []).filter((id) => PROPS[id] && PROPS[id].fit <= 2.6);
     if (!ids.length) return;
     const R = rng(4242);
     const mat = patchProps(new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 38, specular: 0x2a2a2a }));

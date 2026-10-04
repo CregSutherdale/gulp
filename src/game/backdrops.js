@@ -306,12 +306,12 @@ function makeKit(worldKey, arena) {
     pick: (arr) => arr[Math.floor(R() * arr.length) % arr.length],
     glossy: [], matte: [], flat: [], glass: [], blobs: [], meshes: [], tick: [], occ: [],
     shadow: 0x334433, floorY: 0,
-    ns: Math.min(1.15, Math.max(0.68, arena.w / 22)), under: [],
+    ns: Math.min(1.15, Math.max(0.68, arena.w / 22)), under: [], lit: [], halos: [],
   };
-  // Place an item: a part list, or { s: glossy, m: matte, g: glass, f: flat ground } lists.
+  // Place an item: a part list, or { s: glossy, m: matte, g: glass, f: flat ground, l: lit } lists.
   K.add = (item, x = 0, y = 0, z = 0, ry = 0, s = 1, rx = 0, rz = 0) => {
     const it = Array.isArray(item) ? { s: item } : item;
-    for (const [key, list] of [['s', K.glossy], ['m', K.matte], ['g', K.glass], ['f', K.flat]]) {
+    for (const [key, list] of [['s', K.glossy], ['m', K.matte], ['g', K.glass], ['f', K.flat], ['l', K.lit]]) {
       if (it[key]?.length) list.push(...put(it[key], x, y, z, ry, s, rx, rz));
     }
     return K;
@@ -367,6 +367,32 @@ function blobMesh(blobs, color) {
   return m;
 }
 
+// Soft additive glows: [x, y, z, rx, ry, alpha, colour, upright]. Upright quads face the
+// camera side (+z); the others lie on the ground (light pools under lamps).
+function haloMesh(list) {
+  const n = list.length, pos = new Float32Array(n * 18), uv = new Float32Array(n * 12), col = new Float32Array(n * 24);
+  const cn = [[-1, -1], [1, -1], [1, 1], [-1, -1], [1, 1], [-1, 1]];
+  list.forEach(([x, y, z, rx, ry, a, c, up], i) => {
+    _c.set(c);
+    cn.forEach(([u, v], k) => {
+      const j = i * 6 + k;
+      if (up) { pos[j * 3] = x + u * rx; pos[j * 3 + 1] = y + v * ry; pos[j * 3 + 2] = z; }
+      else { pos[j * 3] = x + u * rx; pos[j * 3 + 1] = y; pos[j * 3 + 2] = z - v * ry; }
+      uv[j * 2] = (u + 1) / 2; uv[j * 2 + 1] = (v + 1) / 2;
+      col[j * 4] = _c.r; col[j * 4 + 1] = _c.g; col[j * 4 + 2] = _c.b; col[j * 4 + 3] = a;
+    });
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 4));
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+    map: blobTex(), transparent: true, depthWrite: false, vertexColors: true, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+  }));
+  m.name = 'glow'; m.renderOrder = 2;
+  return m;
+}
+
 function finish(K, root) {
   const group = new THREE.Group();
   group.name = 'backdrop';
@@ -381,7 +407,9 @@ function finish(K, root) {
   mk(K.flat, patchGround(new THREE.MeshLambertMaterial({ vertexColors: true })), 'ground');
   mk(K.under, patchGround(new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 30, specular: 0x242424 })), 'under');
   mk(K.glass, new THREE.MeshPhongMaterial({ vertexColors: true, transparent: true, opacity: 0.32, shininess: 120, specular: 0xffffff, depthWrite: false }), 'glass', false);
+  mk(K.lit, new THREE.MeshBasicMaterial({ vertexColors: true }), 'lit', false);
   if (K.blobs.length) group.add(blobMesh(K.blobs, K.shadow));
+  if (K.halos.length) group.add(haloMesh(K.halos));
   for (const m of K.meshes) group.add(m);
   root.add(group);
   const ticks = K.tick;
@@ -488,21 +516,22 @@ function picketFence(x0, z0, x1, z1, h = 2.0, gap = 0.62) {
   return parts;
 }
 // Puffy cloud, centred on its origin.
-function cloudPuff(K, s) {
-  const parts = [egg(1.7 * s, 0.95 * s, 1.15 * s, WHITE, 0, 0, 0, 12, 7)];
+function cloudPuff(K, s, tint = WHITE, shade = _cloudShade) {
+  const parts = [egg(1.7 * s, 0.95 * s, 1.15 * s, tint, 0, 0, 0, 12, 7)];
   for (let i = 0; i < 4; i++) {
     const a = (i / 4) * TAU + K.R() * 0.6;
-    parts.push(egg(s * K.rnd(0.75, 1.0), s * K.rnd(0.62, 0.85), s * K.rnd(0.7, 0.9), WHITE, Math.cos(a) * s * 1.35, K.rnd(0.0, 0.45) * s, Math.sin(a) * s * 0.75, 10, 6));
+    parts.push(egg(s * K.rnd(0.75, 1.0), s * K.rnd(0.62, 0.85), s * K.rnd(0.7, 0.9), tint, Math.cos(a) * s * 1.35, K.rnd(0.0, 0.45) * s, Math.sin(a) * s * 0.75, 10, 6));
   }
-  recolor(parts, (x, y, z, c) => c.lerp(_cloudShade, 1 - clamp01((y + 0.7 * s) / (1.5 * s))));
+  recolor(parts, (x, y, z, c) => c.lerp(shade, 1 - clamp01((y + 0.7 * s) / (1.5 * s))));
   return parts;
 }
 const _cloudShade = new THREE.Color(0xc9d6ef);
 // Drifting clouds: one mesh, each cloud wraps around independently in the vertex shader.
-function cloudLayer(K, list, span) {
+function cloudLayer(K, list, span, tints = null) {
   const parts = [];
   for (const [x, y, z, s] of list) {
-    const c = cloudPuff(K, s);
+    const tint = tints ? K.pick(tints) : null;
+    const c = tint ? cloudPuff(K, s, tint, new THREE.Color(tint).lerp(new THREE.Color(0x9fb6ff), 0.35)) : cloudPuff(K, s);
     put(c, x, y, z, K.rnd(-0.3, 0.3));
     for (const g of c) g.setAttribute('cx', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(x), 1));
     parts.push(...c);
@@ -1328,43 +1357,7 @@ function picnic(K) {
   const stx = hw + 8.5, stz = -hd * 0.1;   // the swing tree (built further down)
   K.claim(px, pz, 7.5);
   K.claim(stx - 1.5, stz, 5.0);
-  const pond = (r, col, y) => {
-    const g = new THREE.CircleGeometry(1, 40).rotateX(-PI / 2), p = g.attributes.position;
-    for (let i = 1; i < p.count; i++) { const a = Math.atan2(p.getZ(i), p.getX(i)), k = r * (1 + Math.sin(a * 3 + 1) * 0.07 + Math.sin(a * 5 + 2) * 0.04); p.setXYZ(i, p.getX(i) * k * prx, y, p.getZ(i) * k * prz); }
-    p.setY(0, y);
-    return custom(g.translate(px, 0, pz), col);
-  };
-  K.flat.push(pond(1.12, 0xbfa26a, 0.006));
-  const water = pond(1.0, 0x5cc8ef, 0.012);
-  recolor(water, (x, y, z, c) => c.lerp(new THREE.Color(0xa8ecff), clamp01(Math.hypot((x - px) / prx, (z - pz) / prz) - 0.25)));
-  const wm = new THREE.Mesh(merge([water]), patchGround(new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 90, specular: 0xffffff })));
-  wm.name = 'pond'; wm.receiveShadow = true;
-  K.meshes.push(wm);
-  for (let i = 0; i < 5; i++) {
-    const a = K.R() * TAU, d = K.rnd(0.3, 0.75);
-    G.push(custom(new THREE.CircleGeometry(K.rnd(0.5, 0.8), 10, 0.4, TAU - 0.8).rotateX(-PI / 2).rotateY(K.R() * TAU).translate(px + Math.cos(a) * prx * d, 0.03, pz + Math.sin(a) * prz * d), 0x4fae4f));
-  }
-  for (let i = 0; i < 16; i++) {
-    const a = (i / 16) * TAU + K.R() * 0.2;
-    G.push(ballC(K.rnd(0.35, 0.6), K.pick([0xb8b2a8, 0xcfc8bc, 0xa39d94]), px + Math.cos(a) * prx * 1.08, 0.12, pz + Math.sin(a) * prz * 1.08, 0, 0.55));
-  }
-  for (const a of [2.2, 3.4, 5.6]) {
-    const rx0 = px + Math.cos(a) * prx * 0.95, rz0 = pz + Math.sin(a) * prz * 0.95;
-    for (let i = 0; i < 6; i++) {
-      const x = rx0 + K.rnd(-0.5, 0.5), z = rz0 + K.rnd(-0.5, 0.5), h = K.rnd(1.6, 2.6), lean = K.rnd(-0.25, 0.25);
-      G.push(rod([x, 0, z], [x + lean, h, z], 0.06, 0.04, 0x5c9e3c, 4), cyl(0.13, 0.13, 0.55, 0x8a5a33, x + lean * 0.82, h * 0.72, z, 6));
-    }
-  }
-  // Ducks swim in a slow circle.
-  const ducks = [];
-  [[2.3, 0, 1.0, WHITE], [2.3, 0.9, 0.55, 0xffe066], [2.3, 1.45, 0.55, 0xffe066], [2.3, PI, 1.0, WHITE], [2.3, PI + 0.8, 0.55, 0xffe066]].forEach(([r, a, s, c]) => {
-    const d = duck(c);
-    ducks.push(...put(d, Math.cos(a) * r, 0, Math.sin(a) * r, PI / 2 - a, s));
-  });
-  const dm = new THREE.Mesh(merge(ducks), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 40, specular: 0x333333 }));
-  dm.name = 'ducks'; dm.position.set(px, 0.02, pz);
-  K.meshes.push(dm);
-  K.tick.push((t) => { dm.rotation.y = t * 0.16; dm.position.y = 0.02 + Math.sin(t * 2.1) * 0.03; });
+  pondWithDucks(K, px, pz, prx, prz);
 
   // Rustic fence along the far side.
   const fz = -(hd + 6.5);
@@ -1463,6 +1456,48 @@ function picnic(K) {
   const span = hw + 70, cl = [];
   for (let i = 0; i < 5; i++) cl.push([K.rnd(-span, span), K.rnd(7.5, 11), -(hd + K.rnd(14, 34)), K.rnd(1.6, 2.6)]);
   cloudLayer(K, cl, span);
+}
+// A little pond: muddy rim, glossy water (cut by the hole like the ground), lily pads,
+// pebbles, cattails and a family of ducks swimming in a slow circle.
+function pondWithDucks(K, px, pz, prx, prz) {
+  const G = K.glossy;
+  const pond = (r, col, y) => {
+    const g = new THREE.CircleGeometry(1, 40).rotateX(-PI / 2), p = g.attributes.position;
+    for (let i = 1; i < p.count; i++) { const a = Math.atan2(p.getZ(i), p.getX(i)), k = r * (1 + Math.sin(a * 3 + 1) * 0.07 + Math.sin(a * 5 + 2) * 0.04); p.setXYZ(i, p.getX(i) * k * prx, y, p.getZ(i) * k * prz); }
+    p.setY(0, y);
+    return custom(g.translate(px, 0, pz), col);
+  };
+  K.flat.push(pond(1.12, 0xbfa26a, 0.006));
+  const water = pond(1.0, 0x5cc8ef, 0.012);
+  recolor(water, (x, y, z, c) => c.lerp(new THREE.Color(0xa8ecff), clamp01(Math.hypot((x - px) / prx, (z - pz) / prz) - 0.25)));
+  const wm = new THREE.Mesh(merge([water]), patchGround(new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 90, specular: 0xffffff })));
+  wm.name = 'pond'; wm.receiveShadow = true;
+  K.meshes.push(wm);
+  for (let i = 0; i < 5; i++) {
+    const a = K.R() * TAU, d = K.rnd(0.3, 0.75);
+    G.push(custom(new THREE.CircleGeometry(K.rnd(0.5, 0.8), 10, 0.4, TAU - 0.8).rotateX(-PI / 2).rotateY(K.R() * TAU).translate(px + Math.cos(a) * prx * d, 0.03, pz + Math.sin(a) * prz * d), 0x4fae4f));
+  }
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * TAU + K.R() * 0.2;
+    G.push(ballC(K.rnd(0.35, 0.6), K.pick([0xb8b2a8, 0xcfc8bc, 0xa39d94]), px + Math.cos(a) * prx * 1.08, 0.12, pz + Math.sin(a) * prz * 1.08, 0, 0.55));
+  }
+  for (const a of [2.2, 3.4, 5.6]) {
+    const rx0 = px + Math.cos(a) * prx * 0.95, rz0 = pz + Math.sin(a) * prz * 0.95;
+    for (let i = 0; i < 6; i++) {
+      const x = rx0 + K.rnd(-0.5, 0.5), z = rz0 + K.rnd(-0.5, 0.5), h = K.rnd(1.6, 2.6), lean = K.rnd(-0.25, 0.25);
+      G.push(rod([x, 0, z], [x + lean, h, z], 0.06, 0.04, 0x5c9e3c, 4), cyl(0.13, 0.13, 0.55, 0x8a5a33, x + lean * 0.82, h * 0.72, z, 6));
+    }
+  }
+  // Ducks swim in a slow circle.
+  const ducks = [];
+  [[2.3, 0, 1.0, WHITE], [2.3, 0.9, 0.55, 0xffe066], [2.3, 1.45, 0.55, 0xffe066], [2.3, PI, 1.0, WHITE], [2.3, PI + 0.8, 0.55, 0xffe066]].forEach(([r, a, s, c]) => {
+    const d = duck(c);
+    ducks.push(...put(d, Math.cos(a) * r, 0, Math.sin(a) * r, PI / 2 - a, s));
+  });
+  const dm = new THREE.Mesh(merge(ducks), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 40, specular: 0x333333 }));
+  dm.name = 'ducks'; dm.position.set(px, 0.02, pz);
+  K.meshes.push(dm);
+  K.tick.push((t) => { dm.rotation.y = t * 0.16; dm.position.y = 0.02 + Math.sin(t * 2.1) * 0.03; });
 }
 function swingTree(K) {
   const p = roundTree(K, 11, 3.8, 0x5cbf55);
@@ -1919,8 +1954,754 @@ function sailboat() {
   return [...hull, ...mast, ...sail, ...flag];
 }
 
+// ============================================================== SEASON 2 shared pieces
+const SPRINKLES = [0xff5c8a, 0x5cc8ff, 0xffd23f, 0x7be07a, 0xb48cff, 0xff9a3a, 0xffffff];
+// Radius of a lathe profile [[r, h], ...] at height y (piecewise linear).
+function profileR(pts, y) {
+  for (let i = 1; i < pts.length; i++) {
+    const [r0, h0] = pts[i - 1], [r1, h1] = pts[i];
+    if (y >= Math.min(h0, h1) && y <= Math.max(h0, h1) && h1 !== h0) return r0 + (r1 - r0) * ((y - h0) / (h1 - h0));
+  }
+  return 0;
+}
+// A sagging rope between two points (licorice swags, string lights).
+function swag(list, a, b, sag, col, r = 0.09, seg = 5) {
+  let prev = a;
+  for (let i = 1; i <= 8; i++) {
+    const t = i / 8, pt = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t - Math.sin(t * PI) * sag, a[2] + (b[2] - a[2]) * t];
+    list.push(rod(prev, pt, r, r, col, seg));
+    prev = pt;
+  }
+}
+// Ribbon along a curve on the ground: pts [[x, z], ...], width, colour, height.
+function groundRibbon(pts, width, col, y, R = null, jit = 0) {
+  const out = [];
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const [xa, za] = pts[i], [xb, zb] = pts[i + 1];
+    const [xp, zp] = pts[Math.max(0, i - 1)], [xn, zn] = pts[Math.min(pts.length - 1, i + 2)];
+    const na = norm2(xb - xp, zb - zp), nb = norm2(xn - xa, zn - za);
+    const w = width / 2;
+    const a0 = [xa - na[1] * w, y, za + na[0] * w], a1 = [xa + na[1] * w, y, za - na[0] * w];
+    const b0 = [xb - nb[1] * w, y, zb + nb[0] * w], b1 = [xb + nb[1] * w, y, zb - nb[0] * w];
+    out.push(tris([a0, a1, b1, a0, b1, b0], col));
+  }
+  if (R && jit) jitter(out, R, jit);
+  return out;
+}
+function norm2(x, z) { const l = Math.hypot(x, z) || 1; return [x / l, z / l]; }
+
+// ============================================================== CANDY LAND
+function candy(K) {
+  const { hw, hd } = K;
+  K.shadow = 0x9a4a7a;
+  const G = K.glossy, ns = K.ns;
+  const X0 = hw + 0.5, Z0 = hd + 0.5;
+  const RZ = -(hd + 9.5), FENCE_Z = -(hd + 16);
+  const riverAt = (x) => RZ + Math.sin(x * 0.075 + 1.0) * 2.0 + Math.sin(x * 0.031 + 0.4) * 1.2;
+  K.claim(-(hw + 9), -hd * 0.15, 4.5);   // chocolate fountain
+
+  // Frosting ground: pastel patches and rainbow sprinkles (one geometry), icing border at the rail.
+  const dots = [];
+  for (let i = 0; i < 36; i++) {
+    const [x, z] = K.around(2.6, 28, 16), r = K.rnd(1.6, 3.8);
+    if (Math.abs(z - riverAt(x)) < r + 3.5) continue;
+    dots.push([x, 0.01 + (i % 4) * 0.01, z, r, K.pick([0xffd3ed, 0xffbfe3, 0xffdcf0, 0xf8c6ef, 0xd9f2ea]), 18, 1, K.rnd(0.6, 1.0), K.R() * PI]);
+  }
+  for (let i = 0; i < 300; i++) {
+    const [x, z] = K.around(2.0, 26, 16);
+    if (Math.abs(z - riverAt(x)) < 4) continue;
+    dots.push([x, 0.07, z, 0.12, K.pick(SPRINKLES), 5, 0.42, 1.9, K.R() * PI]);
+  }
+  const B = 0.9, IY = 0.055;
+  K.flat.push(rectXZ(-(X0 + B), X0 + B, Z0, Z0 + B, IY, WHITE), rectXZ(-(X0 + B), X0 + B, -(Z0 + B), -Z0, IY, WHITE),
+    rectXZ(X0, X0 + B, -Z0, Z0, IY, WHITE), rectXZ(-(X0 + B), -X0, -Z0, Z0, IY, WHITE));
+  for (let x = -(X0 + B); x <= X0 + B + 0.01; x += 1.0) dots.push([x, IY, Z0 + B, 0.5, WHITE, 8], [x, IY, -(Z0 + B), 0.5, WHITE, 8]);
+  for (let z = -(Z0 + B); z <= Z0 + B + 0.01; z += 1.0) dots.push([X0 + B, IY, z, 0.5, WHITE, 8], [-(X0 + B), IY, z, 0.5, WHITE, 8]);
+  K.flat.push(discBatch(dots));
+
+  // Near side (low, seen at every level start): candy-button strips and chocolate coins.
+  const bz = hd + 2.6 + 1.6 * ns;
+  K.add({ f: candyButtons(5.4, 1.3) }, -hw * 0.42, 0, bz, 0.1, ns);
+  K.add({ f: candyButtons(5.4, 1.3) }, hw * 0.4, 0, bz + 0.6 * ns, -0.12, ns);
+  for (const [x, z] of [[-hw * 0.05, bz + 2.2 * ns], [hw * 0.16, bz + 1.5 * ns], [-hw * 0.78, bz + 2.4 * ns], [hw * 0.82, bz + 2.0 * ns], [-(hw + 4), hd + 3], [hw + 3.6, hd + 4.2]]) {
+    K.add(chocCoin(), x, 0, z, K.R() * TAU, ns);
+    K.blob(x, 0.02, z, 0.8 * ns, 0.8 * ns, 0.25);
+  }
+
+  // Candy-cane posts with licorice swags down both sides (hooks curl outward).
+  const nc = Math.max(3, Math.round((2 * hd + 2) / 9) + 1);
+  for (const s of [-1, 1]) {
+    let prev = null;
+    for (let i = 0; i < nc; i++) {
+      const z = -(hd + 1) + (2 * hd + 2) * (i / (nc - 1)), x = s * (hw + 2.8);
+      K.add(candyCane(6.2, 0.3), x, 0, z, s > 0 ? PI : 0);
+      K.blob(x, 0.02, z, 0.9, 0.9, 0.35);
+      const top = [x, 5.5, z];
+      if (prev) swag(G, prev, top, 1.3, 0xe8325a, 0.09, 4);
+      prev = top;
+    }
+  }
+
+  // Lollipop trees and sugared gumdrops at the sides (bigger ones further out).
+  const LOLLY = [[0xff5c8a, 0xfff1f8], [0x5cc8ff, 0xffffff], [0xffd23f, 0xff7ab8], [0x7be07a, 0xffffff], [0xb48cff, 0xffe7f6]];
+  const GUM = [0x9be36b, 0xffa24a, 0xb48cff, 0xff6b8a, 0xffe066, 0x5cc8ff];
+  const lolly = (x, z, h, R) => {
+    if (!K.free(x, z, R + 0.6)) return;
+    K.claim(x, z, R + 0.6);
+    const [a, b] = K.pick(LOLLY);
+    K.add(lollipopTree(K, h, R, a, b), x, 0, z, K.rnd(-0.35, 0.35));
+    K.blob(x, 0.02, z + 0.6, R * 0.9, R * 0.6, 0.32);
+  };
+  const gum = (x, z, r) => {
+    if (!K.free(x, z, r + 0.3)) return;
+    K.claim(x, z, r + 0.3);
+    K.add(gumdrop(K, r, r * 1.25, K.pick(GUM), true), x, 0, z, K.R() * TAU);
+    K.blob(x + 0.2, 0.02, z + 0.2, r * 1.25, r * 1.1, 0.35);
+  };
+  for (const s of [-1, 1]) {
+    lolly(s * (hw + 5.2), hd + 3.8, 6.5, 2.0);
+    for (let i = 0; i < 9; i++) lolly(s * (hw + K.rnd(6, 22)), K.rnd(-(hd + 4), hd + 8), K.rnd(6, 9.5), K.rnd(1.8, 2.8));
+    for (let i = 0; i < 9; i++) gum(s * (hw + K.rnd(4.6, 20)), K.rnd(-(hd + 3), hd + 9), K.rnd(0.9, 1.8));
+  }
+  K.add(chocoFountain(), -(hw + 9), 0, -hd * 0.15);
+  K.blob(-(hw + 9), 0.02, -hd * 0.15, 4.0, 3.6, 0.38);
+
+  // A chocolate river across the far side with cookie-crumb banks and a wafer bridge.
+  const rpts = [];
+  for (let x = -(hw + 80); x <= hw + 80; x += 2) rpts.push([x, riverAt(x)]);
+  K.flat.push(...groundRibbon(rpts, 7.2, 0xd9a066, 0.035, K.R, 0.12));
+  K.meshes.push(chocolateRiver(K, rpts, 5.2));
+  K.add(waferBridge(riverAt(0)), 0, 0, 0);
+
+  // Gingerbread fence (with gingerbread men) and a candy-cane arch gate beyond the river.
+  G.push(...gingerFence(-(hw + 18), -2.6, FENCE_Z), ...gingerFence(2.6, hw + 18, FENCE_Z));
+  K.add(candyCane(5.4, 0.3), -2.3, 0, FENCE_Z, PI);
+  K.add(candyCane(5.4, 0.3), 2.3, 0, FENCE_Z, 0);
+  for (let x = -(hw + 18); x < hw + 18; x += 2.5) K.blob(x, 0.02, FENCE_Z + 0.4, 1.3, 0.5, 0.25);
+
+  // Beyond: gumdrop hills, more lollipops, a rainbow, cotton-candy clouds.
+  for (let i = 0; i < 9; i++) {
+    const r = K.rnd(5, 10), x = K.rnd(-(hw + 50), hw + 50), z = FENCE_Z - K.rnd(6, 34);
+    const g = gumdrop(K, r, r * K.rnd(0.6, 0.85), K.pick(GUM), false);
+    K.matte.push(...put(g, x, -0.2, z));
+  }
+  for (let i = 0; i < 7; i++) lolly(K.rnd(-(hw + 26), hw + 26), FENCE_Z - K.rnd(2.5, 10), K.rnd(7, 10), K.rnd(2.2, 3.0));
+  const rb = [0xff7a9a, 0xffb36b, 0xffe27a, 0x9be89b, 0x8fd0ff, 0xc9a8ff];
+  rb.forEach((c, i) => K.matte.push(custom(new THREE.TorusGeometry(26 - i * 1.1, 0.58, 5, 36, PI).translate(0, -3, FENCE_Z - 40), c)));
+  const span = hw + 70, cl = [];
+  for (let i = 0; i < 5; i++) cl.push([K.rnd(-span, span), K.rnd(7, 10.5), FENCE_Z + K.rnd(-18, 2), K.rnd(1.6, 2.5)]);
+  cloudLayer(K, cl, span, [0xffc2e6, 0xc2e4ff, 0xe6d2ff]);
+}
+function candyButtons(L, Wd) {
+  const p = [flat(L, Wd, 0xfffdf8, 0, 0.06, 0)];
+  const cols = [0xff8fc4, 0x8fd0ff, 0xffe27a];
+  for (let r = 0; r < 3; r++) for (let i = 0; i < 10; i++) p.push(disc(0.17, cols[(i + r) % 3], -L / 2 + (i + 0.5) * (L / 10), 0.075, -Wd / 2 + (r + 0.5) * (Wd / 3), 8));
+  return p;
+}
+function chocCoin() {
+  return [cyl(0.6, 0.6, 0.12, 0xf2b93c, 0, 0, 0, 16), torus(0.56, 0.06, 0xffd96b, 0, 0.13, 0, PI / 2, 16), disc(0.34, 0xffe08a, 0, 0.125, 0, 12)];
+}
+function candyCane(h, r) {
+  const RED = 0xe8325a, R = 0.85, n = 7, p = [];
+  for (let i = 0; i < n; i++) p.push(cyl(r, r, h / n + 0.01, i % 2 ? WHITE : RED, 0, (h / n) * i, 0, 7));
+  for (let i = 0; i < 6; i++) p.push(custom(new THREE.TorusGeometry(R, r, 6, 2, PI / 6).rotateZ(i * PI / 6).translate(-R, h, 0), i % 2 ? RED : WHITE));
+  p.push(cyl(r, r, 0.45, WHITE, -2 * R, h - 0.45, 0, 8), ballC(r, RED, -2 * R, h - 0.45 - r * 0.5, 0, 0));
+  return p;
+}
+function lollipopTree(K, h, R, a, b) {
+  const p = [cyl(0.16, 0.2, h, WHITE, 0, 0, 0, 8)];
+  const head = [custom(new THREE.CylinderGeometry(R, R, 0.5, 24).rotateX(PI / 2), b)];
+  const turns = 3, N = 56, w = (R / turns) * 0.24, pts = [];
+  const at = (t, off) => { const th = t * turns * TAU, rr = Math.max(0, t * R * 0.93 + off); return [Math.cos(th) * rr, Math.sin(th) * rr, 0.26]; };
+  for (let i = 0; i < N; i++) {
+    const t0 = i / N, t1 = (i + 1) / N, a0 = at(t0, -w), a1 = at(t1, -w), b0 = at(t0, w), b1 = at(t1, w);
+    pts.push(a0, b0, b1, a0, b1, a1);
+  }
+  head.push(tris(pts, a, new THREE.Vector3(0, 0, 1)));
+  p.push(...put(head, 0, h + R * 0.85, 0, 0, 1, -0.32));
+  p.push(...put([tris([[0, 0, 0], [0.7, 0.32, 0.05], [0.7, -0.32, 0.05], [0, 0, 0], [-0.7, -0.32, 0.05], [-0.7, 0.32, 0.05]], a, new THREE.Vector3(0, 0, 1)), ballC(0.14, a, 0, 0, 0.06, 0)], 0, h - 0.2, 0.22));
+  return p;
+}
+function gumdrop(K, r, h, col, sugar) {
+  const prof = [[0, 0], [r, 0], [r * 0.98, h * 0.42], [r * 0.86, h * 0.76], [r * 0.6, h * 0.95], [0, h]];
+  const p = [lathe(prof, col, sugar ? 16 : 22)];
+  shadeY(p, 0, h, 0.82, 1.08);
+  if (sugar) {
+    // sugar crystals: tiny tetrahedra (4 triangles each) scattered over the surface
+    const n = Math.min(12, Math.round(r * 7));
+    for (let i = 0; i < n; i++) {
+      const y = h * (0.12 + 0.8 * K.R()), a = K.R() * TAU, rr = profileR(prof.slice(1), y) * 1.01;
+      p.push(custom(new THREE.TetrahedronGeometry(0.09 + r * 0.03).rotateY(K.R() * TAU).translate(Math.cos(a) * rr, y, Math.sin(a) * rr), 0xffffff));
+    }
+  }
+  return p;
+}
+function chocoFountain() {
+  const GL = 0xffd77a, CH = 0x6b3a1f, CHL = 0x8a4a28;
+  const p = [lathe([[0, 0], [3.2, 0], [3.4, 0.5], [3.3, 0.9], [3.0, 0.9], [2.9, 0.55], [0, 0.5]], GL, 24), disc(2.95, CH, 0, 0.62, 0, 24), cyl(0.35, 0.45, 5.4, GL, 0, 0.5, 0, 10)];
+  const tiers = [[2.2, 2.2], [1.5, 3.8], [0.9, 5.2]];
+  tiers.forEach(([r, y], i) => {
+    p.push(lathe([[0.3, 0], [r, 0.25], [r * 1.05, 0.55], [r * 0.9, 0.5], [0, 0.35]], GL, 18, 0, y, 0));
+    const floor = i === 0 ? 0.62 : tiers[i - 1][1] + 0.5;
+    p.push(lathe([[r * 1.2, floor - y - 0.05], [r * 1.12, 0.1], [r * 1.05, 0.56]], CHL, 18, 0, y, 0));
+  });
+  p.push(dome(0.6, 0.5, 0.6, CH, 0, 5.75, 0, 12, 4));
+  return p;
+}
+// Melted chocolate: a ribbon whose swirls drift downstream (fragment shader).
+function chocolateRiver(K, pts, width) {
+  const pos = [], flow = [], idx = [];
+  pts.forEach(([x, z], i) => {
+    const [xp, zp] = pts[Math.max(0, i - 1)], [xn, zn] = pts[Math.min(pts.length - 1, i + 1)], n = norm2(xn - xp, zn - zp);
+    for (const s of [-1, 1]) { pos.push(x - n[1] * s * width / 2, 0.07, z + n[0] * s * width / 2); flow.push(x, s); }
+  });
+  for (let i = 0; i + 1 < pts.length; i++) { const a = i * 2, b = a + 1, c = a + 2, d = a + 3; idx.push(a, b, d, a, d, c); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('flow', new THREE.Float32BufferAttribute(flow, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  if (g.attributes.normal.getY(0) < 0) { idx.reverse(); g.setIndex(idx); g.computeVertexNormals(); }
+  const uTime = { value: 0 };
+  const mat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 85, specular: 0x7a5640 });
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = uTime;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 flow;\nvarying vec2 vFlow;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFlow = flow;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nvarying vec2 vFlow;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        float sw = sin(vFlow.x * 0.55 - uTime * 1.2 + vFlow.y * 2.2 + sin(vFlow.x * 0.17 + uTime * 0.35) * 2.0);
+        vec3 dark = vec3(0.10, 0.035, 0.012), milk = vec3(0.22, 0.09, 0.035), cream = vec3(0.42, 0.20, 0.09);
+        vec3 choc = mix(dark, milk, 0.5 + 0.5 * sin(vFlow.x * 0.21 + vFlow.y * 1.3 - uTime * 0.6));
+        choc = mix(choc, cream, smoothstep(0.62, 0.98, sw) * 0.65);
+        choc *= 1.0 - smoothstep(0.7, 1.0, abs(vFlow.y)) * 0.35;
+        diffuseColor.rgb = choc;`);
+  };
+  mat.customProgramCacheKey = () => 'backdrop-choc-river';
+  const m = new THREE.Mesh(g, mat);
+  m.name = 'river'; m.receiveShadow = true; m.frustumCulled = false;
+  K.tick.push((t) => { uTime.value = t; });
+  return m;
+}
+function waferBridge(rz) {
+  const p = [], WAF = 0xe8b977, WAFD = 0xcf9a55, n = 9, L = 9.5;
+  for (let i = 0; i < n; i++) {
+    const t0 = i / n, t1 = (i + 1) / n, z0 = rz + L / 2 - t0 * L, z1 = rz + L / 2 - t1 * L;
+    const y0 = 0.3 + Math.sin(t0 * PI) * 1.3, y1 = 0.3 + Math.sin(t1 * PI) * 1.3, len = Math.hypot(z1 - z0, y1 - y0);
+    p.push(custom(new THREE.BoxGeometry(3.4, 0.32, len + 0.04).rotateX(Math.atan2(y1 - y0, -(z1 - z0))).translate(0, (y0 + y1) / 2, (z0 + z1) / 2), i % 2 ? WAF : WAFD));
+  }
+  for (const s of [-1, 1]) {
+    let prev = null;
+    for (let i = 0; i <= 6; i++) {
+      const t = i / 6, z = rz + L / 2 - t * L, y = 0.3 + Math.sin(t * PI) * 1.3;
+      p.push(cyl(0.12, 0.12, 1.1, i % 2 ? 0xe8325a : WHITE, s * 1.6, y, z, 6));
+      const top = [s * 1.6, y + 1.1, z];
+      if (prev) p.push(rod(prev, top, 0.1, 0.1, i % 2 ? WHITE : 0xe8325a, 5));
+      prev = top;
+    }
+  }
+  return p;
+}
+function picketShape(w, h) {
+  const s = new THREE.Shape();
+  s.moveTo(-w / 2, 0); s.lineTo(w / 2, 0); s.lineTo(w / 2, h - w / 2); s.absarc(0, h - w / 2, w / 2, 0, PI, false); s.lineTo(-w / 2, 0);
+  return s;
+}
+function gingerFence(x0, x1, z) {
+  const p = [], GB = 0xc47b3f, IC = 0xfffaf2, n = Math.max(1, Math.round((x1 - x0) / 1.25));
+  for (let i = 0; i <= n; i++) {
+    const x = x0 + ((x1 - x0) * i) / n;
+    if (i % 6 === 3) { p.push(...put(gingerMan(), x, 0, z)); continue; }
+    p.push(custom(new THREE.ExtrudeGeometry(picketShape(0.9, 2.3), { depth: 0.3, bevelEnabled: false, curveSegments: 4 }).translate(x, 0, z - 0.15), GB));
+    for (let k = 0; k < 2; k++) p.push(custom(new THREE.BoxGeometry(0.72, 0.07, 0.05).rotateZ(k % 2 ? 0.45 : -0.45).translate(x, 0.75 + k * 0.7, z + 0.18), IC));
+  }
+  for (const y of [0.7, 1.65]) p.push(rod([x0, y, z - 0.25], [x1, y, z - 0.25], 0.09, 0.09, IC, 5));
+  return p;
+}
+function gingerMan() {
+  const GB = 0xc47b3f, IC = 0xfffaf2;
+  const p = [custom(new THREE.CylinderGeometry(0.42, 0.42, 0.3, 12).rotateX(PI / 2).translate(0, 2.15, 0), GB), box(0.95, 1.05, 0.3, GB, 0, 0.85, 0)];
+  for (const s of [-1, 1]) {
+    p.push(rod([s * 0.4, 1.7, 0], [s * 1.05, 1.35, 0], 0.17, 0.17, GB, 5), rod([s * 0.25, 0.9, 0], [s * 0.45, 0.0, 0], 0.2, 0.2, GB, 5));
+    p.push(box(0.09, 0.09, 0.04, IC, s * 0.15, 2.22, 0.17), box(0.06, 0.26, 0.04, IC, s * 0.88, 1.27, 0.18));
+  }
+  for (let k = 0; k < 3; k++) p.push(box(0.12, 0.12, 0.05, k === 1 ? 0xff5c8a : IC, 0, 1.0 + k * 0.28, 0.17));
+  p.push(box(0.3, 0.06, 0.04, IC, 0, 1.98, 0.17));
+  return p;
+}
+
+// ============================================================== SUNNY FARM
+function farm(K) {
+  const { hw, hd } = K;
+  K.shadow = 0x2f5a24;
+  const G = K.glossy, ns = K.ns;
+  const FZ = -(hd + 5.5);
+  const barnX = -(Math.max(hw * 0.45, 5) + 3), barnZ = -(hd + 15);
+  const siloX = barnX + 10.5, siloZ = barnZ - 1.5, millX = hw + 10, millZ = -(hd + 10);
+  const pondX = hw + 9.5, pondZ = hd * 0.42;
+  K.claim(barnX, barnZ, 9); K.claim(siloX, siloZ, 3.5); K.claim(millX, millZ, 4.5); K.claim(pondX, pondZ, 6.5);
+
+  // Ground: grass patches and clover.
+  const dots = [];
+  for (let i = 0; i < 50; i++) {
+    const [x, z] = K.around(2.6, 26, 16), r = K.rnd(1.6, 4.2);
+    dots.push([x, 0.01 + (i % 4) * 0.01, z, r, K.pick([0x86bd57, 0x9acd65, 0x82b852, 0xa5d470]), 18, 1, K.rnd(0.6, 1.0), K.R() * PI]);
+  }
+  for (let i = 0; i < 200; i++) { const [x, z] = K.around(1.8, 24, 16); dots.push([x, 0.09, z, 0.13, K.pick([0xffffff, 0xfff27a, 0xffffff, 0xffc2dc]), 5]); }
+  K.flat.push(discBatch(dots));
+
+  // A dirt lane up the left side, through the fence gate to the barn doors.
+  const lane = new THREE.CatmullRomCurve3([[-(hw + 7), hd + 24], [-(hw + 4.6), hd + 4], [-(hw + 5.0), -hd * 0.4], [barnX + 1.5, FZ + 1], [barnX + 0.5, barnZ + 6.5]].map(([x, z]) => new THREE.Vector3(x, 0, z)));
+  const lp = lane.getSpacedPoints(70).map((v) => [v.x, v.z]);
+  K.flat.push(...groundRibbon(lp, 3.4, 0xcfae7c, 0.05, K.R, 0.1), ...groundRibbon(lp, 0.55, 0x8fbf5a, 0.06));
+  for (const off of [-0.95, 0.95]) {
+    const rut = lp.map(([x, z], i) => { const [xn, zn] = lp[Math.min(lp.length - 1, i + 1)], [xp, zp] = lp[Math.max(0, i - 1)], n = norm2(xn - xp, zn - zp); return [x - n[1] * off, z + n[0] * off]; });
+    K.flat.push(...groundRibbon(rut, 0.3, 0xb08d5e, 0.065));
+  }
+
+  // Vegetable garden on the near side (low rows), a scarecrow keeping watch at the corner.
+  const rowSpan = hw - 0.8;
+  [['cabbage', 0], ['carrot', 1], ['lettuce', 2]].forEach(([kind, r]) => {
+    const z = hd + 2.1 + r * 1.55 * ns;
+    K.add([custom(new THREE.CylinderGeometry(0.55, 0.55, 2 * rowSpan, 8, 1, false, 0, PI).rotateZ(PI / 2).scale(1, 0.4, 1), 0x8a5a36)], 0, 0, z, 0, [1, 1, ns]);
+    for (let x = -rowSpan + 0.6; x < rowSpan - 0.4; x += 1.05 * ns) K.add(veg(K, kind), x + K.rnd(-0.1, 0.1), 0.15, z, K.R() * TAU, ns);
+  });
+  K.blob(0, 0.02, hd + 2.1 + 1.55 * ns, rowSpan + 0.6, 2.4 * ns, 0.18);
+  K.add(scarecrow(), -(hw + 2.6), 0, hd + 2.4 + 1.5 * ns, 0.3);
+  K.blob(-(hw + 2.6), 0.02, hd + 2.4 + 1.5 * ns, 1.3, 1.0, 0.35);
+
+  // Rail fences: the far side (with a gate for the lane) and the left side along the lane.
+  const gateX = barnX + 1.5;
+  G.push(...railFence(-(hw + 20), FZ, gateX - 2.4, FZ), ...railFence(gateX + 2.4, FZ, hw + 20, FZ));
+  G.push(...railFence(-(hw + 2.6), FZ + 2.5, -(hw + 2.6), hd + 1.5), ...railFence(hw + 3.4, FZ + 2.5, hw + 3.4, -hd * 0.05));
+  for (let x = -(hw + 20); x < hw + 20; x += 2.6) K.blob(x, 0.02, FZ + 0.3, 1.0, 0.6, 0.25);
+
+  // Barnyard: red barn, silo, haybales; a windmill turning on the right.
+  K.add(barn(K), barnX, 0, barnZ);
+  K.blob(barnX + 0.6, 0.02, barnZ + 0.6, 7.5, 6.0, 0.42);
+  K.add(silo(), siloX, 0, siloZ);
+  K.blob(siloX + 0.5, 0.02, siloZ + 0.5, 3.0, 3.0, 0.4);
+  for (const [x, z, ry] of [[barnX - 7.5, barnZ + 5.5, 0.4], [barnX + 7.0, barnZ + 6.5, -0.3], [barnX + 9.0, barnZ + 4.6, 1.2], [-(hw + 8.5), -hd * 0.55, 0.2], [hw + 6.5, FZ + 3.0, -0.6]]) {
+    K.add(hayBale(), x, 0, z, ry);
+    K.blob(x, 0.02, z, 1.9, 1.5, 0.38, ry);
+  }
+  K.add(hayStack(K), barnX - 6.0, 0, barnZ + 1.5, 0.3);
+  K.blob(barnX - 6.0, 0.02, barnZ + 1.5, 3.0, 2.4, 0.38);
+  const mill = windmill(K);
+  K.add(mill.tower, millX, 0, millZ);
+  K.blob(millX + 0.6, 0.02, millZ + 0.6, 3.6, 3.0, 0.42);
+  const rotor = new THREE.Mesh(merge(mill.rotor), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 30, specular: 0x242424 }));
+  rotor.name = 'windmill'; rotor.position.set(millX, mill.hubY, millZ + mill.hubZ);
+  K.meshes.push(rotor);
+  K.tick.push((t) => { rotor.rotation.z = -t * 0.55; });
+
+  // Apple orchard on the right, a duck pond in front of it.
+  const cols = 3, rows = Math.max(2, Math.round((hd + 6) / 6.5));
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const x = hw + 7.5 + c * 5.4 + (r % 2) * 1.2, z = FZ + 4.5 + r * 5.6;
+    if (z > pondZ - 7.5 || !K.free(x, z, 2.6)) continue;
+    K.claim(x, z, 2.6);
+    K.add(appleTree(K, c === 0), x, 0, z, K.R() * TAU);
+    K.blob(x + 0.6, 0.02, z + 0.4, 2.7, 2.3, 0.38);
+  }
+  pondWithDucks(K, pondX, pondZ, 4.2, 5.2);
+
+  // Trees and hills on the horizon; butterflies over the garden; clouds.
+  for (let x = -(hw + 30); x <= hw + 30; x += K.rnd(5.5, 8.5)) {
+    const z = FZ - K.rnd(17, 27);
+    if (!K.free(x, z, 2.5)) continue;
+    K.add(farTree(K, K.rnd(6, 8.5), K.rnd(2.2, 2.9), K.pick([0x5cbf55, 0x4fb04f, 0x6ccb5e])), x, 0, z, K.R() * TAU);
+  }
+  for (let i = 0; i < 12; i++) {
+    const rx = K.rnd(12, 22), ry = K.rnd(3.5, 8), h = dome(rx, ry, K.rnd(8, 14), K.pick([0x8cc65c, 0x9fd36e, 0x7fbd52, 0xb0dc7c]), K.rnd(-(hw + 60), hw + 60), -0.3, FZ - K.rnd(26, 52), 18, 6);
+    shadeY(h, 0, ry, 0.82, 1.08);
+    K.matte.push(h);
+  }
+  for (const s of [-1, 1]) for (let i = 0; i < 3; i++) {
+    const h = dome(K.rnd(9, 15), K.rnd(3, 6), K.rnd(9, 14), K.pick([0x8cc65c, 0x9fd36e]), s * (hw + K.rnd(28, 40)), -0.3, K.rnd(-hd, hd + 10), 18, 6);
+    shadeY(h, 0, 6, 0.85, 1.06);
+    K.matte.push(h);
+  }
+  const bsp = [];
+  for (let i = 0; i < Math.max(4, Math.round(hw / 2.5)); i++) bsp.push([K.rnd(-(hw - 1), hw - 1), K.rnd(1.3, 1.7), hd + 2.1 + 3.1 * ns + K.rnd(1.6, 2.2)]);
+  butterflies(K, bsp);
+  const span = hw + 70, cl = [];
+  for (let i = 0; i < 5; i++) cl.push([K.rnd(-span, span), K.rnd(7.5, 11), FZ - K.rnd(8, 30), K.rnd(1.6, 2.6)]);
+  cloudLayer(K, cl, span);
+}
+function veg(K, kind) {
+  if (kind === 'cabbage') return [ballC(0.42, 0x6fc25a, 0, 0.3, 0, 1, 0.8), ballC(0.3, 0xb6ea8e, 0, 0.52, 0, 1, 0.7)];
+  if (kind === 'carrot') return [disc(0.16, 0xff8a2a, 0, 0.2, 0, 8), ...[0, 2.1, 4.2].map((a) => custom(new THREE.ConeGeometry(0.07, 0.6, 4, 1, true).translate(0, 0.3, 0).rotateZ(0.35).rotateY(a).translate(0, 0.18, 0), 0x4fae4f))];
+  return [dome(0.4, 0.3, 0.4, 0x9fdc6a, 0, 0.15, 0, 9, 3), dome(0.26, 0.24, 0.26, 0xc4ee8e, 0, 0.2, 0, 8, 3)];
+}
+function scarecrow() {
+  const W = 0x9a6a42, HAY = 0xf2cc5c;
+  return [cyl(0.12, 0.14, 3.6, W, 0, 0, 0, 6), box(3.0, 0.2, 0.2, W, 0, 2.55, 0), box(1.3, 1.4, 0.7, 0x6f9bd8, 0, 1.6, 0), box(1.32, 0.18, 0.72, 0xd9483b, 0, 2.3, 0),
+    ballC(0.48, 0xf0dcae, 0, 3.4, 0, 1), cone(0.55, 0.75, 0xe0b45a, 0, 3.75, 0, 10), cyl(0.95, 0.95, 0.08, 0xe0b45a, 0, 3.72, 0, 14),
+    cone(0.14, 0.4, HAY, -1.55, 2.45, 0, 5), cone(0.14, 0.4, HAY, 1.55, 2.45, 0, 5), ballC(0.05, INK, -0.17, 3.5, 0.44, 0), ballC(0.05, INK, 0.17, 3.5, 0.44, 0),
+    box(0.75, 0.6, 0.72, 0x3f5f9a, 0, 1.0, 0), cone(0.18, 0.45, HAY, 0, 0.62, 0, 5)];
+}
+function barn(K) {
+  const W = 11, H = 6.5, D = 9.5, RED = 0xd9493e, REDD = 0xb83a31, TR = 0xffffff, ROOF = 0x6f5550;
+  const p = [boxS(W, H, D, RED, 0, 0, 0)];
+  for (let x = -W / 2 + 0.55; x < W / 2; x += 0.55) p.push(box(0.05, H, 0.04, REDD, x, 0, D / 2 + 0.02));
+  const g = new THREE.Shape(), gw = W / 2 + 0.5;
+  g.moveTo(-gw, 0); g.lineTo(-gw * 0.62, 2.9); g.lineTo(0, 4.4); g.lineTo(gw * 0.62, 2.9); g.lineTo(gw, 0); g.lineTo(-gw, 0);
+  p.push(custom(new THREE.ExtrudeGeometry(g, { depth: D + 1.0, bevelEnabled: false }).translate(0, H, -(D + 1.0) / 2), ROOF));
+  const gi = new THREE.Shape(), iw = W / 2;
+  gi.moveTo(-iw, 0); gi.lineTo(-iw * 0.62, 2.55); gi.lineTo(0, 3.95); gi.lineTo(iw * 0.62, 2.55); gi.lineTo(iw, 0); gi.lineTo(-iw, 0);
+  p.push(custom(new THREE.ShapeGeometry(gi).translate(0, H, D / 2 + 0.52), RED));
+  for (const [a, b] of [[[-gw, 0], [-gw * 0.62, 2.9]], [[-gw * 0.62, 2.9], [0, 4.4]], [[0, 4.4], [gw * 0.62, 2.9]], [[gw * 0.62, 2.9], [gw, 0]]]) p.push(rod([a[0], H + a[1], D / 2 + 0.56], [b[0], H + b[1], D / 2 + 0.56], 0.13, 0.13, TR, 4));
+  for (const s of [-1, 1]) p.push(box(0.3, H, 0.3, TR, s * (W / 2 - 0.1), 0, D / 2 - 0.05));
+  p.push(box(W + 0.2, 0.3, 0.3, TR, 0, H - 0.3, D / 2 + 0.05));
+  for (const s of [-1, 1]) {
+    const dx = s * 1.35;
+    p.push(box(2.5, 4.4, 0.14, REDD, dx, 0, D / 2 + 0.08), box(2.5, 0.22, 0.2, TR, dx, 4.2, D / 2 + 0.12), box(0.22, 4.4, 0.2, TR, dx + s * 1.15, 0, D / 2 + 0.12));
+    p.push(custom(new THREE.BoxGeometry(0.2, 4.9, 0.1).rotateZ(s * 0.52).translate(dx, 2.2, D / 2 + 0.16), TR), custom(new THREE.BoxGeometry(0.2, 4.9, 0.1).rotateZ(-s * 0.52).translate(dx, 2.2, D / 2 + 0.16), TR));
+  }
+  p.push(box(2.2, 1.9, 0.12, REDD, 0, H + 0.35, D / 2 + 0.56), box(1.8, 0.8, 0.14, 0xf2cc5c, 0, H + 0.4, D / 2 + 0.6), box(0.25, 0.25, 1.6, 0x8a5a3a, 0, H + 2.5, D / 2 + 1.0));
+  p.push(rod([0, H + 4.4, 0], [0, H + 6.0, 0], 0.05, 0.05, INK, 4), box(1.1, 0.06, 0.06, INK, 0, H + 5.4, 0), cone(0.12, 0.3, INK, 0.62, H + 5.25, 0, 4));
+  p.push(...put([egg(0.32, 0.26, 0.08, INK), ballC(0.1, INK, 0.25, 0.18, 0, 0), cone(0.09, 0.25, 0xd9483b, 0.25, 0.28, 0, 4)], 0, H + 5.85, 0));
+  shadeY(p.slice(0, 1), 0, H, 0.85, 1.02);
+  return p;
+}
+function silo() {
+  const S = 0xdcdcd4, SD = 0xb9bcb8;
+  const p = [cyl(2.4, 2.4, 14, S, 0, 0, 0, 16), dome(2.5, 1.9, 2.5, 0xb8c4cf, 0, 14, 0, 16, 5)];
+  for (const y of [3.5, 7, 10.5]) p.push(cyl(2.46, 2.46, 0.22, SD, 0, y, 0, 16));
+  for (const s of [-1, 1]) p.push(box(0.1, 13.6, 0.1, 0x8a8f94, s * 0.3, 0.2, 2.45));
+  for (let y = 0.8; y < 13.6; y += 0.8) p.push(box(0.6, 0.07, 0.07, 0x8a8f94, 0, y, 2.47));
+  return p;
+}
+function hayBale() {
+  const H = 0xe8c25a, HD = 0xcda443;
+  const p = [custom(new THREE.CylinderGeometry(1.1, 1.1, 1.6, 14).rotateZ(PI / 2).translate(0, 1.1, 0), H)];
+  for (const s of [-1, 1]) for (const r of [0.8, 0.45]) p.push(custom(new THREE.RingGeometry(r - 0.08, r, 14).rotateY(s * PI / 2).translate(s * 0.81, 1.1, 0), HD));
+  return p;
+}
+function hayStack(K) {
+  const H = 0xe8c25a;
+  const p = [];
+  for (const [x, y, z] of [[-1.3, 0, 0], [1.3, 0, 0], [0, 1.1, 0]]) p.push(box(2.4, 1.1, 1.3, H, x, y, z), box(2.42, 1.12, 0.08, 0xb08a3a, x, y, z + 0.3), box(2.42, 1.12, 0.08, 0xb08a3a, x, y, z - 0.3));
+  jitter(p, K.R, 0.08);
+  return p;
+}
+function windmill(K) {
+  const T = 0xfff2dc, TD = 0xe6d2b4, ROOF = 0xd9493e;
+  const tower = [custom(new THREE.CylinderGeometry(1.7, 2.7, 10, 8).translate(0, 5, 0), T), cone(2.3, 2.4, ROOF, 0, 10, 0, 8)];
+  shadeY(tower, 0, 10, 0.85, 1.03);
+  tower.push(box(1.2, 2.2, 0.12, 0x8a5a3a, 0, 0, 2.45), box(0.8, 0.8, 0.1, 0x9fd2ff, 0, 5.2, 2.0), box(0.95, 0.95, 0.06, TD, 0, 5.12, 1.97), box(4.0, 0.25, 1.2, TD, 0, 2.6, 2.0));
+  const hubY = 9.2, hubZ = 2.55;
+  tower.push(cyl(0.35, 0.35, 0.9, 0x6b5560, 0, hubY, hubZ - 0.5, 8, PI / 2));
+  const rotor = [cyl(0.45, 0.45, 0.4, 0x6b5560, 0, 0, 0.2, 10, PI / 2)];
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * TAU + 0.4, sail = [box(0.22, 5.4, 0.18, 0x8a5a3a, 0, 0.2, 0.25)];
+    sail.push(box(1.3, 4.2, 0.06, 0xfff8ee, 0.78, 1.2, 0.33));
+    for (let k = 0; k < 4; k++) sail.push(box(1.4, 0.07, 0.08, 0x8a5a3a, 0.75, 1.4 + k * 1.15, 0.37));
+    rotor.push(...put(sail, 0, 0, 0, 0, 1, 0, a));
+  }
+  return { tower, rotor, hubY, hubZ };
+}
+function appleTree(K, front) {
+  const t = front ? roundTree(K, 7.5, 2.6, 0x5cbf55) : farTree(K, 7.2, 2.6, 0x55b84f);
+  const cy = front ? Math.max(1.2, 7.5 - 2.6 * 1.7) + 2.6 * 0.75 : 7.2 - 2.6;
+  for (let i = 0; i < 9; i++) {
+    const a = K.R() * TAU, e = K.rnd(-0.2, 0.75), r = 2.6 * 1.0;
+    t.push(ballC(0.22, i % 4 ? 0xe8323f : 0xffd23f, Math.cos(a) * Math.cos(e) * r, cy + Math.sin(e) * r, Math.sin(a) * Math.cos(e) * r, 0));
+  }
+  return t;
+}
+
+// ============================================================== SNOWY VILLAGE
+function snow(K) {
+  const { hw, hd } = K;
+  K.shadow = 0x5a78a8;
+  const G = K.glossy, ns = K.ns;
+  const VZ = -(hd + 11);
+  const pondX = -(hw + 10.5), pondZ = -hd * 0.05, hillX = hw + 16, hillZ = -hd * 0.45;
+  K.claim(pondX, pondZ, 7.5); K.claim(hillX, hillZ, 11); K.claim(hw + 4.6, hd * 0.3, 2.2);
+
+  // Snow ground: soft blue shadows and glints.
+  const dots = [];
+  for (let i = 0; i < 46; i++) {
+    const [x, z] = K.around(2.6, 26, 16), r = K.rnd(1.6, 4.2);
+    dots.push([x, 0.01 + (i % 4) * 0.01, z, r, K.pick([0xdde9f8, 0xf4f9ff, 0xe3edfa]), 18, 1, K.rnd(0.6, 1.0), K.R() * PI]);
+  }
+  for (let i = 0; i < 260; i++) { const [x, z] = K.around(1.7, 24, 16); dots.push([x, 0.06, z, K.rnd(0.06, 0.12), K.pick([0xffffff, 0xcfe6ff, 0xffffff]), 5]); }
+
+  // Near side (low): drifts, a snow angel with footprints walking up to it, a snowball pile.
+  const az = hd + 2.4 + 3.6 * ns, ax = -hw * 0.25;
+  const ANG = 0xd2e2f6;
+  dots.push([ax, 0.08, az, 0.6 * ns, ANG, 14, 1.1, 1.5, 0], [ax, 0.08, az - 1.3 * ns, 0.42 * ns, ANG, 12]);
+  for (const sd of [-1, 1]) {
+    dots.push([ax + sd * 1.0 * ns, 0.08, az - 0.45 * ns, 0.6 * ns, ANG, 14, 1.6, 0.55, sd * 0.55]);
+    dots.push([ax + sd * 0.55 * ns, 0.08, az + 1.0 * ns, 0.6 * ns, ANG, 12, 0.9, 1.3, -sd * 0.3]);
+  }
+  let fx = -(hw + 4), fz = az + 6.5 * ns;
+  for (let i = 0; i < 24; i++) {
+    const a = Math.atan2(az + 1.6 * ns - fz, ax - 1.0 - fx) + Math.sin(i * 0.6) * 0.2;
+    fx += Math.cos(a) * 0.85; fz += Math.sin(a) * 0.85;
+    if (Math.hypot(fx - ax + 1.0, fz - az - 1.6 * ns) < 1.2) break;
+    const sd = i % 2 ? 1 : -1;
+    dots.push([fx - Math.sin(a) * 0.24 * sd, 0.08, fz + Math.cos(a) * 0.24 * sd, 0.19, 0xcfdff3, 7, 1, 1.7, -a + PI / 2]);
+  }
+  K.flat.push(discBatch(dots));
+  K.add(snowballPile(), hw * 0.35, 0, az - 0.4 * ns, 0.4, ns);
+  K.blob(hw * 0.35, 0.02, az - 0.4 * ns, 1.4 * ns, 1.2 * ns, 0.3);
+  for (const [x, z, r] of [[-(hw + 4.5), hd + 3.4, 2.4], [hw + 5.2, hd + 4.6, 2.0], [hw * 0.8, hd + 2.6 + 6.5 * ns, 1.6], [-hw * 0.75, hd + 2.6 + 7.4 * ns, 1.8]]) {
+    const dr = dome(r, 0.45, r * 0.7, 0xf6faff, x, -0.05, z, 14, 4);
+    shadeY(dr, 0, 0.45, 0.88, 1.05);
+    K.matte.push(dr);
+  }
+
+  // A garland of coloured lights lying in the snow around the board (frames the white board).
+  garland(K, hw + 1.45, hd + 1.45);
+  // Lampposts along both sides of the board.
+  for (const s of [-1, 1]) for (const z of [-hd * 0.55, hd * 0.45]) addLamp(K, s * (hw + 2.7), z);
+
+  // Snowman on the right; frozen pond with skaters on the left; sled hill far right.
+  K.add(snowman(), hw + 4.6, 0, hd * 0.3, -0.5);
+  K.blob(hw + 4.6, 0.02, hd * 0.3, 2.0, 1.8, 0.35);
+  frozenPond(K, pondX, pondZ, 5.0, 6.4);
+  const hill = dome(12, 6.5, 10, 0xf6faff, hillX, -0.2, hillZ, 22, 7);
+  shadeY(hill, 0, 6.5, 0.86, 1.04);
+  K.matte.push(hill);
+  for (const off of [-0.6, 0.6]) {
+    let prev = null;
+    for (let i = 0; i <= 12; i++) {
+      const t = i / 12, x = hillX - 1.5 - t * 9.5, z = hillZ + 2.0 + t * 2.4 + off;
+      const e = Math.max(0, 1 - ((x - hillX) / 12) ** 2 - ((z - hillZ) / 10) ** 2), y = 6.5 * Math.sqrt(e) - 0.2 + 0.06;
+      const pt = [x, Math.max(0.06, y), z];
+      if (prev) G.push(rod(prev, pt, 0.11, 0.11, 0x9fb8d8, 4));
+      prev = pt;
+    }
+  }
+  for (const [dx, dz, h] of [[2.5, -4.5, 6.5], [-3.5, -5.5, 5.5], [5.5, -1.5, 7]]) {
+    const x = hillX + dx, z = hillZ + dz, e = Math.max(0, 1 - (dx / 12) ** 2 - (dz / 10) ** 2);
+    K.add(snowPine(K, h, h * 0.33), x, 6.5 * Math.sqrt(e) - 0.6, z, K.R() * TAU);
+  }
+  K.add(sled(), hillX - 12.0, 0, hillZ + 5.0, -0.25);
+  K.blob(hillX - 12.0, 0.02, hillZ + 5.0, 1.8, 1.0, 0.3, -0.25);
+
+  // The village: cottages with lit windows, string lights and chimney smoke; lamps on the lane.
+  const nCot = Math.max(3, Math.round((2 * hw + 22) / 9.5));
+  const COT = [[0xfff1d6, 0xd9564a], [0xbfdcff, 0x4f86d9], [0xffd0dc, 0xd9566f], [0xc8f0dc, 0x3fa97a], [0xffe9a8, 0xd98a3a]];
+  const smokeSrc = [];
+  for (let i = 0; i < nCot; i++) {
+    const x = -(hw + 11) + (2 * hw + 22) * (i / (nCot - 1)), z = VZ - K.rnd(0, 2.2);
+    const [wall, trim] = COT[i % COT.length];
+    const c = cottage(K, wall, trim);
+    K.add(c, x, 0, z);
+    for (const h of c.halo) K.halos.push([h[0] + x, h[1], h[2] + z, ...h.slice(3)]);
+    smokeSrc.push([c.smoke[0] + x, c.smoke[1], c.smoke[2] + z]);
+    K.blob(x + 0.5, 0.02, z + 0.5, 4.2, 3.6, 0.4);
+    if (i < nCot - 1) addLamp(K, x + (2 * hw + 22) / (nCot - 1) / 2, VZ + 4.2);
+  }
+  smokeLayer(K, smokeSrc);
+
+  // Snowy pines all around, falling snow beyond the board.
+  const pine = (x, z, h) => {
+    if (!K.free(x, z, h * 0.32)) return;
+    K.claim(x, z, h * 0.32);
+    K.add(snowPine(K, h, h * 0.33), x, 0, z, K.R() * TAU);
+    K.blob(x + 0.5, 0.02, z + 0.4, h * 0.36, h * 0.3, 0.32);
+  };
+  for (const s of [-1, 1]) for (let i = 0; i < 14; i++) pine(s * (hw + K.rnd(5, 24)), K.rnd(-(hd + 6), hd + 9), K.rnd(5.5, 9.5));
+  for (let x = -(hw + 30); x <= hw + 30; x += K.rnd(3.5, 6)) pine(x, VZ - K.rnd(5.5, 16), K.rnd(6.5, 10.5));
+  for (let i = 0; i < 10; i++) {
+    const rx = K.rnd(12, 22), ry = K.rnd(3.5, 8), h = dome(rx, ry, K.rnd(8, 14), K.pick([0xf2f7ff, 0xe8f1fd]), K.rnd(-(hw + 60), hw + 60), -0.3, VZ - K.rnd(20, 46), 18, 6);
+    shadeY(h, 0, ry, 0.84, 1.04);
+    K.matte.push(h);
+  }
+  snowfall(K, hw, hd, 420);
+}
+function garland(K, gx, gz) {
+  const cols = [0xff5a5f, 0x5fd16a, 0xffd23f, 0x4fa3ff, 0xff8fd8];
+  const pts = [[-gx, gz], [gx, gz], [gx, -gz], [-gx, -gz], [-gx, gz]];
+  let c = 0;
+  for (let k = 0; k < 4; k++) {
+    const [ax, az] = pts[k], [bx, bz] = pts[k + 1], len = Math.hypot(bx - ax, bz - az), n = Math.round(len / 1.1);
+    K.glossy.push(rod([ax, 0.06, az], [bx, 0.06, bz], 0.035, 0.035, 0x2f4a3a, 3));
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) / n, x = ax + (bx - ax) * t, z = az + (bz - az) * t;
+      K.lit.push(custom(new THREE.OctahedronGeometry(0.13).scale(1, 1.35, 1).translate(x, 0.17, z), cols[c++ % cols.length]));
+    }
+  }
+}
+function snowPine(K, h, r) {
+  const p = [cyl(r * 0.12, r * 0.16, h * 0.3, 0x7a5a3a, 0, 0, 0, 6)];
+  for (let i = 0; i < 3; i++) {
+    const R = r * (1 - i * 0.24), H = h * 0.42, y = h * 0.2 + i * h * 0.2;
+    p.push(cone(R, H, K.pick([0x2f7a4f, 0x358a55, 0x2a6e48]), 0, y, 0, 9), cone(R * 0.47, H * 0.45, 0xf6faff, 0, y + H * 0.55 - 0.02, 0, 9));
+  }
+  p.push(dome(r * 0.8, 0.35, r * 0.8, 0xf6faff, 0, 0, 0, 10, 3));
+  return p;
+}
+function cottage(K, wall, trim) {
+  const W = 6, H = 4.2, D = 5.2, SNOWC = 0xf6faff, LIT = 0xffd36b;
+  const s = [boxS(W, H, D, wall, 0, 0, 0)], l = [], halo = [];
+  shadeY(s, 0, H, 0.84, 1.02);
+  s.push(custom(new THREE.ExtrudeGeometry(gableShape(W, 2.45), { depth: D, bevelEnabled: false }).translate(0, H, -D / 2), wall));
+  s.push(roofSlab(W + 1.0, 2.75, D + 0.9, 0.3, trim, H - 0.32), roofSlab(W + 1.2, 2.95, D + 1.0, 0.42, SNOWC, H - 0.12));
+  s.push(box(0.9, 2.5, 0.9, 0xb4533f, W * 0.24, H + 0.6, -D * 0.15), box(1.08, 0.3, 1.08, SNOWC, W * 0.24, H + 3.1, -D * 0.15));
+  s.push(box(1.3, 2.4, 0.12, 0x8a5a3a, -W * 0.24, 0, D / 2 + 0.06), torus(0.4, 0.11, 0x3f9a55, -W * 0.24, 1.85, D / 2 + 0.15, 0, 12), ballC(0.1, 0xe8323f, -W * 0.24 - 0.1, 1.48, D / 2 + 0.24, 0), ballC(0.1, 0xe8323f, -W * 0.24 + 0.1, 1.48, D / 2 + 0.24, 0));
+  for (const [x, y] of [[W * 0.22, 1.5]]) {
+    l.push(box(1.2, 1.05, 0.08, LIT, x, y, D / 2 + 0.04));
+    s.push(box(1.4, 0.12, 0.14, WHITE, x, y + 1.05, D / 2 + 0.07), box(1.4, 0.12, 0.14, WHITE, x, y - 0.1, D / 2 + 0.07), box(0.1, 1.1, 0.13, WHITE, x, y, D / 2 + 0.07), box(1.4, 0.1, 0.12, WHITE, x, y + 0.48, D / 2 + 0.08));
+    s.push(box(1.5, 0.2, 0.45, SNOWC, x, y - 0.3, D / 2 + 0.2));
+    halo.push([x, y + 0.5, D / 2 + 0.3, 1.5, 1.3, 0.55, 0xffb347, true]);
+  }
+  l.push(vdisc(0.42, LIT, 0, H + 1.0, D / 2 + 0.02, 12));
+  halo.push([0, H + 1.0, D / 2 + 0.3, 1.0, 1.0, 0.45, 0xffb347, true]);
+  const bulbs = [0xff5a5f, 0x5fd16a, 0xffd23f, 0x4fa3ff];
+  for (let i = 0; i <= 12; i++) {
+    const t = i / 12, side = t < 0.5 ? -1 : 1, u = side < 0 ? t * 2 : (1 - t) * 2;
+    l.push(ballC(0.12, bulbs[i % 4], side * (W + 1.2) / 2 * (1 - u) * 0.98, H - 0.2 + u * 2.95 - 0.1, D / 2 + 0.55, 0));
+  }
+  return { s, l, halo, smoke: [W * 0.24, H + 3.4, -D * 0.15] };
+}
+function addLamp(K, x, z) {
+  const P = 0x2f3d4a, h = 5.2;
+  K.add({ s: [cyl(0.3, 0.38, 0.5, P, 0, 0, 0, 8), cyl(0.11, 0.13, h, P, 0, 0.5, 0, 6), box(0.85, 0.12, 0.85, P, 0, h + 0.45, 0),
+    box(0.1, 0.95, 0.1, P, 0.38, h + 0.55, 0.38), box(0.1, 0.95, 0.1, P, -0.38, h + 0.55, 0.38), box(0.1, 0.95, 0.1, P, 0.38, h + 0.55, -0.38), box(0.1, 0.95, 0.1, P, -0.38, h + 0.55, -0.38),
+    cone(0.68, 0.55, P, 0, h + 1.5, 0, 4), ballC(0.12, P, 0, h + 2.15, 0, 0)], l: [box(0.62, 0.86, 0.62, 0xffe08a, 0, h + 0.6, 0)] }, x, 0, z, PI / 4);
+  K.halos.push([x, h + 1.0, z + 0.5, 1.2, 1.2, 0.6, 0xffb347, true], [x, 0.05, z, 2.2, 2.2, 0.32, 0xffcf7a, false]);
+  K.blob(x, 0.02, z, 0.7, 0.7, 0.35);
+}
+function snowman() {
+  const S = 0xf8fbff, COAL = 0x2b2a33;
+  const p = [ballC(1.25, S, 0, 1.15, 0, 2), ballC(0.92, S, 0, 2.95, 0, 2), ballC(0.66, S, 0, 4.3, 0, 2)];
+  shadeY(p, 0, 5, 0.86, 1.04);
+  p.push(custom(new THREE.ConeGeometry(0.13, 0.75, 8).rotateX(PI / 2).translate(0, 4.33, 0.98), 0xff8a2a));
+  for (const s of [-1, 1]) p.push(ballC(0.08, COAL, s * 0.22, 4.5, 0.58, 0));
+  for (let i = 0; i < 3; i++) p.push(ballC(0.09, COAL, 0, 2.55 + i * 0.4, 0.86 - Math.abs(i - 1) * 0.06, 0));
+  p.push(cyl(0.48, 0.48, 0.1, COAL, 0, 4.85, 0, 14), cyl(0.33, 0.35, 0.75, COAL, 0, 4.9, 0, 12), cyl(0.355, 0.355, 0.16, 0xe8323f, 0, 4.98, 0, 12));
+  p.push(torus(0.62, 0.15, 0xe8323f, 0, 3.75, 0, PI / 2, 14), box(0.3, 0.8, 0.12, 0xe8323f, 0.4, 2.95, 0.62));
+  for (const s of [-1, 1]) p.push(rod([s * 0.8, 3.1, 0], [s * 1.9, 3.75, 0.1], 0.06, 0.04, 0x7a5a3a, 4), rod([s * 1.6, 3.6, 0.05], [s * 1.85, 4.05, 0.1], 0.03, 0.03, 0x7a5a3a, 3));
+  return p;
+}
+function frozenPond(K, px, pz, prx, prz) {
+  const g = new THREE.CircleGeometry(1, 36).rotateX(-PI / 2), q = g.attributes.position;
+  for (let i = 1; i < q.count; i++) { const a = Math.atan2(q.getZ(i), q.getX(i)), k = 1 + Math.sin(a * 3 + 0.5) * 0.06; q.setXYZ(i, q.getX(i) * k * prx, 0.03, q.getZ(i) * k * prz); }
+  q.setY(0, 0.03);
+  const ice = custom(g.translate(px, 0, pz), 0xbfe6ff);
+  recolor(ice, (x, y, z, c) => c.lerp(new THREE.Color(0xeaf7ff), clamp01(Math.hypot((x - px) / prx, (z - pz) / prz) * 1.2 - 0.2)));
+  const scr = [];
+  for (let i = 0; i < 6; i++) {
+    const r = K.rnd(1, 3.6);
+    scr.push(custom(new THREE.RingGeometry(r, r + 0.07, 18, 1, K.R() * TAU, K.rnd(0.8, 1.8)).rotateX(-PI / 2).translate(px + K.rnd(-0.6, 0.6), 0.045, pz + K.rnd(-0.8, 0.8)), 0xffffff));
+  }
+  const im = new THREE.Mesh(merge([ice, ...scr]), patchGround(new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 110, specular: 0xffffff })));
+  im.name = 'ice'; im.receiveShadow = true;
+  K.meshes.push(im);
+  for (let i = 0; i < 22; i++) {
+    const a = (i / 22) * TAU + K.R() * 0.2;
+    K.matte.push(ballC(K.rnd(0.4, 0.75), 0xf6faff, px + Math.cos(a) * prx * 1.06, 0.1, pz + Math.sin(a) * prz * 1.06, 1, 0.55));
+  }
+  [[-1.6, -1.2, 0xe8323f, 0x4f86d9, 0.4], [1.4, 0.9, 0x4fa3ff, 0xffd23f, 2.4], [0.2, 2.6, 0x5fd16a, 0xff5a8a, 4.4]].forEach(([dx, dz, coat, hat, ry]) => {
+    K.add(skater(coat, hat), px + dx, 0.03, pz + dz, ry, 1, 0, 0.18);
+    K.blob(px + dx, 0.05, pz + dz, 0.8, 0.6, 0.3);
+  });
+}
+function skater(coat, hat) {
+  const SK = 0xffd9b8, P = 0x3a3f58;
+  return [rod([0, 1.05, 0.15], [0.35, 0.15, 0.2], 0.1, 0.09, P, 5), rod([0, 1.05, -0.15], [-0.25, 0.25, -0.22], 0.1, 0.09, P, 5),
+    box(0.55, 0.06, 0.1, CHROME, 0.4, 0.0, 0.2), box(0.55, 0.06, 0.1, CHROME, -0.2, 0.1, -0.22),
+    cone(0.52, 1.25, coat, 0, 0.85, 0, 10), torus(0.2, 0.07, 0xffffff, 0, 2.05, 0, PI / 2, 10), ballC(0.3, SK, 0, 2.08, 0, 1),
+    dome(0.31, 0.3, 0.31, hat, 0, 2.3, 0, 10, 4), ballC(0.1, WHITE, 0, 2.62, 0, 0),
+    rod([0, 1.8, 0.25], [0.25, 1.5, 0.95], 0.08, 0.08, coat, 5), rod([0, 1.8, -0.25], [-0.25, 1.5, -0.95], 0.08, 0.08, coat, 5),
+    ballC(0.1, hat, 0.25, 1.5, 0.95, 0), ballC(0.1, hat, -0.25, 1.5, -0.95, 0)];
+}
+function sled() {
+  const RED = 0xe8323f, W = 0x9a6a42;
+  const p = [];
+  for (const s of [-1, 1]) {
+    p.push(box(2.6, 0.08, 0.12, CHROME, -0.1, 0.02, s * 0.55), custom(new THREE.TorusGeometry(0.32, 0.06, 4, 8, PI).rotateZ(-PI / 2).translate(1.2, 0.34, s * 0.55), CHROME));
+    for (const x of [-0.8, 0.5]) p.push(box(0.08, 0.35, 0.08, CHROME, x, 0.05, s * 0.55));
+  }
+  for (let i = 0; i < 4; i++) p.push(box(0.42, 0.1, 1.3, i % 2 ? RED : 0xff6f6f, -0.85 + i * 0.5, 0.4, 0));
+  p.push(rod([1.3, 0.55, 0], [2.4, 0.08, 0.3], 0.03, 0.03, 0xffe08a, 3));
+  return p;
+}
+function snowballPile() {
+  const p = [], S = 0xf8fbff;
+  for (const [x, z] of [[-0.45, -0.3], [0.45, -0.3], [0, 0.45], [-0.9, 0.45], [0.9, 0.45], [0, -1.05]]) p.push(ballC(0.42, S, x, 0.42, z, 1));
+  for (const [x, z] of [[-0.22, 0.05], [0.22, 0.05], [0, -0.45]]) p.push(ballC(0.4, S, x, 1.05, z, 1));
+  p.push(ballC(0.38, S, 0, 1.62, -0.12, 1));
+  return shadeY(p, 0, 2, 0.86, 1.04);
+}
+// Chimney smoke: puffs that rise, drift, swell and shrink away (all in the vertex shader).
+function smokeLayer(K, sources) {
+  const parts = [];
+  sources.forEach(([x, y, z], si) => {
+    for (let i = 0; i < 5; i++) {
+      const g = custom(new THREE.IcosahedronGeometry(0.55, 1).translate(x, y, z), 0xf2f5fa);
+      const n = g.attributes.position.count, pc = new Float32Array(n * 4);
+      for (let k = 0; k < n; k++) { pc[k * 4] = x; pc[k * 4 + 1] = y; pc[k * 4 + 2] = z; pc[k * 4 + 3] = i / 5 + si * 0.137; }
+      g.setAttribute('pc', new THREE.BufferAttribute(pc, 4));
+      parts.push(g);
+    }
+  });
+  const uTime = { value: 0 };
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0x4a4e58 });
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = uTime;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec4 pc;\nuniform float uTime;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        float life = fract(uTime * 0.11 + pc.w);
+        float sz = sin(life * 3.14159) * (0.55 + life * 1.3);
+        vec3 c = pc.xyz + vec3(sin(life * 5.0 + pc.w * 17.0) * 0.5 + life * 1.8, life * 6.5, 0.0);
+        transformed = c + (transformed - pc.xyz) * sz;`);
+  };
+  mat.customProgramCacheKey = () => 'backdrop-smoke';
+  const m = new THREE.Mesh(merge(parts), mat);
+  m.name = 'smoke'; m.frustumCulled = false;
+  K.meshes.push(m);
+  K.tick.push((t) => { uTime.value = t; });
+}
+// Gentle snowfall as points, only outside the board (sides and far side).
+function snowfall(K, hw, hd, n) {
+  const pos = new Float32Array(n * 3), ph = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let x, z;
+    if (K.R() < 0.5) { x = K.rnd(-(hw + 30), hw + 30); z = -(hd + K.rnd(2.2, 30)); }
+    else { x = (K.R() < 0.5 ? -1 : 1) * (hw + K.rnd(2.2, 26)); z = K.rnd(-(hd + 2), hd + 12); }
+    pos[i * 3] = x; pos[i * 3 + 1] = K.rnd(0, 12); pos[i * 3 + 2] = z; ph[i] = K.R();
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('ph', new THREE.BufferAttribute(ph, 1));
+  const uTime = { value: 0 };
+  // Flake sprite: white core with a faint blue-grey rim so it reads on snow and on pines.
+  const tex = canvasTex(64, (x, sz) => {
+    const g = x.createRadialGradient(sz / 2, sz / 2, 0, sz / 2, sz / 2, sz / 2);
+    g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.5, 'rgba(255,255,255,1)');
+    g.addColorStop(0.72, 'rgba(160,186,220,0.85)'); g.addColorStop(1, 'rgba(160,186,220,0)');
+    x.fillStyle = g; x.fillRect(0, 0, sz, sz);
+  });
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  const mat = new THREE.PointsMaterial({ size: 1.1, map: tex, transparent: true, depthWrite: false, color: 0xffffff });
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = uTime;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float ph;\nuniform float uTime;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        transformed.y = mod(position.y - uTime * (0.6 + ph * 0.5), 12.0);
+        transformed.x += sin(uTime * 0.8 + ph * 20.0) * 0.3;
+        transformed.z += cos(uTime * 0.6 + ph * 13.0) * 0.2;`);
+  };
+  mat.customProgramCacheKey = () => 'backdrop-snowfall';
+  const m = new THREE.Points(g, mat);
+  m.name = 'snowfall'; m.frustumCulled = false;
+  K.meshes.push(m);
+  K.tick.push((t) => { uTime.value = t; });
+}
+
 // ============================================================== entry
-const BUILDERS = { bakery, kitchen, playroom, picnic, garden, beach };
+const BUILDERS = { bakery, kitchen, playroom, picnic, garden, beach, candy, farm, snow };
 
 export function buildBackdrop(worldKey, arena, root) {
   const build = BUILDERS[worldKey];

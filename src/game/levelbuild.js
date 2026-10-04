@@ -158,9 +158,10 @@ Object.assign(WORLDS, {
   snow: {
     label: 'Snowy Village', sky: 0xdcefff, hemiSky: 0xf6fbff, hemiGround: 0xcfdcee, surround: 0xe9f3ff, wall: 0xffffff, accent: '#6fb7ff',
     tile: 4, floor: (x, w, h) => {
-      x.fillStyle = '#f7fbff'; x.fillRect(0, 0, w, h);
-      noise(x, w, h, 10);
-      for (let i = 0; i < 260; i++) { x.fillStyle = `rgba(170,205,255,${0.25 + Math.random() * 0.35})`; const r = 1 + Math.random() * 2; x.beginPath(); x.arc(Math.random() * w, Math.random() * h, r, 0, 6.3); x.fill(); }
+      // Soft icy blue (not pure white) so white props (snowmen, snowballs) stand out.
+      x.fillStyle = '#dce9f8'; x.fillRect(0, 0, w, h);
+      noise(x, w, h, 8);
+      for (let i = 0; i < 260; i++) { x.fillStyle = `rgba(255,255,255,${0.35 + Math.random() * 0.4})`; const r = 1 + Math.random() * 2; x.beginPath(); x.arc(Math.random() * w, Math.random() * h, r, 0, 6.3); x.fill(); }
     },
   },
 });
