@@ -3,7 +3,7 @@
 A cozy 3D hole-swallowing game made for Amanda. Play: **https://cregsutherdale.github.io/gulp/** (iPhone: Safari → Share → Add to Home Screen).
 
 ## Modes
-- **Levels**: 30 hand-built boards across 6 worlds (bakery, picnic, toy room, garden, beach, kitchen). Each has a target list and a generous timer. Stars are earned against par times. Free helpers: Magnet, Freeze, Grow.
+- **Levels**: 60 hand-built boards in three seasons across 12 worlds (Season 1: bakery, picnic, toy room, garden, beach, kitchen; Season 2: candy, farm, snow; Season 3, the challenge season: craft corner, fun fair, moon camp). Each has a target list and a generous timer. Stars are earned against par times. Free helpers: Magnet, Freeze, Grow.
 - **Zen**: endless calm boards for every world plus the town. Eaten things pop back; optional auto-steer.
 - **Race**: 2 minutes in the town against 5 rival holes.
 - **Gulp Book**: a collection of everything she has swallowed. **Holes**: rim skins unlocked by stars.
@@ -13,8 +13,9 @@ Three.js 0.169 + Rapier (wasm) + vanilla ES modules. Each hole carries a physica
 
 | Path | What |
 |---|---|
-| `src/game/props.js`, `props_cozy.js` | Prop catalog: code-built geometry, collider, fit, value |
-| `src/game/levels.js`, `pars.js` | 30 levels (placement ops), star par times |
+| `src/game/props.js`, `props_cozy.js`, `props_wave2.js`, `props_wave3.js` | Prop catalog: code-built geometry, collider, fit, value |
+| `src/game/levels.js`, `levels_wave2.js`, `levels_wave3.js`, `allLevels.js` | 60 levels (placement ops), in play order |
+| `src/game/difficulty.js`, `pars.js` | Challenge timers + star pars, Relaxed pars |
 | `src/game/zenbuild.js` | Zen board generator |
 | `src/game/backdrops.js` | Scenery around each world's arena |
 | `src/engine/audio.js` | Synthesized SFX + lazy per-world music (`public/music`) |

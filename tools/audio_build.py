@@ -103,6 +103,10 @@ KEYMAP = {
     "candy": "lively_city",       # sugary, playful, bouncy: the most major (78%) bouncy-staccato track
     "farm": "long_journey",       # rustic, cheerful, morning: F major sunny stroll, smoothest transients
     "snow": "holy_sanctuary",     # cozy winter, gentle: beatless warm shimmering pads, no pokes
+    # Season 3 (2026-10-04): no new audio; each new world shares the closest-mood track.
+    "craft": "wood_forest_town",  # cozy homemade indoors: the warmest, bounciest town theme (shared with kitchen)
+    "fair": "lively_city",        # festive, sugary, bouncy (shared with bakery/candy)
+    "space": "traveling_the_sky", # airy, floating, high register (shared with race/beach)
 }
 # Extra names the runtime accepts (old main.js keys + the town world).
 ALIASES = {"calm": "menu", "play": "bakery", "city": "bakery", "title": "menu", "map": "menu"}

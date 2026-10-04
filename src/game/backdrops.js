@@ -17,6 +17,7 @@
 //  - Tabletop worlds (bakery, kitchen) move the arena's 600x600 surround plane down to
 //    their room floor so the counter/table edge can drop away to a real floor below.
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { box, rbox, cyl, cone, ball, torus, capsule, custom, merge } from './geo.js';
 import { rng } from './maps.js';
 import { patchGround } from '../engine/render.js';
@@ -2700,8 +2701,1108 @@ function snowfall(K, hw, hd, n) {
   K.tick.push((t) => { uTime.value = t; });
 }
 
+// ============================================================== season 3 helpers
+// Colour whole triangles by their centre (crisp stripes on tents, canopies, planets).
+function paintTris(parts, fn) {
+  for (const g of [parts].flat(Infinity)) {
+    const p = g.attributes.position, c = g.attributes.color;
+    for (let i = 0; i + 2 < p.count; i += 3) {
+      const hex = fn((p.getX(i) + p.getX(i + 1) + p.getX(i + 2)) / 3, (p.getY(i) + p.getY(i + 1) + p.getY(i + 2)) / 3, (p.getZ(i) + p.getZ(i + 1) + p.getZ(i + 2)) / 3);
+      if (hex == null) continue;
+      _c.set(hex);
+      for (let j = i; j < i + 3; j++) c.setXYZ(j, _c.r, _c.g, _c.b);
+    }
+  }
+  return parts;
+}
+// Which of n equal pie slices (around y) a point falls in (lines up with cones/lathes).
+const slice = (x, z, n) => Math.floor((Math.atan2(z, x) / TAU + 1) * n) % n;
+// A thin cord through a list of points (threads, wires, strings).
+function cord(list, pts, r, col, seg = 4) {
+  for (let i = 1; i < pts.length; i++) list.push(rod(pts[i - 1], pts[i], r, r, col, seg));
+  return list;
+}
+// A local point (x, z) turned by ry exactly as put() turns it.
+const turn = (x, z, ry) => [x * Math.cos(ry) + z * Math.sin(ry), -x * Math.sin(ry) + z * Math.cos(ry)];
+// Thin ring with a low-poly tube (trim, bands, hoops): torus() with 4 sides instead of 8.
+const thinRing = (R, tube, col, x = 0, y = 0, z = 0, rx = PI / 2, seg = 16, sides = 4) => custom(new THREE.TorusGeometry(R, tube, sides, seg).rotateX(rx).translate(x, y, z), col);
+const lighten = (hex, t) => new THREE.Color(hex).lerp(new THREE.Color(0xffffff), t).getHex();
+const darken = (hex, k) => new THREE.Color(hex).multiplyScalar(k).getHex();
+
+// ============================================================== CRAFT CORNER
+const YARN = [0xff9fb2, 0x9fd8c4, 0xffd47a, 0xb9a6f0, 0x8ec8f0, 0xffb38a, 0xf6efe2];
+const FABRIC = [0xffc4d2, 0xc4e8d4, 0xfff0b4, 0xdccbf6, 0xffd6b4, 0xc8e4f8];
+function craft(K) {
+  const { hw, hd, ns } = K;
+  const FL = -8, TOP = 24;
+  const X0 = hw + 0.5, Z0 = hd + 0.5;
+  const TX = hw + 9.5, TZN = hd + 5 + 2 * ns, TZF = -(hd + 10);
+  const BZ = -(hd + 14), RX = hw + 15, SZ = hd + 16;
+  K.floorY = FL; K.shadow = 0x6e4526;
+  const G = K.glossy, M = K.matte, U = K.under;
+  const EDGE = 0xc68c5a, APRON = 0xb27a4b, LEG = 0xbf8656, WALL = 0xfff2e4, WAIN = 0xcbe5d0, CAP = 0xffb59a;
+
+  // The craft table: honey planks round the mat (flush, starting under the rail), a
+  // rounded edge, an apron and turned legs down to the room floor.
+  const top = [
+    rectXZ(-TX, TX, Z0, TZN, 0, 0xffffff, 10, 2), rectXZ(-TX, TX, TZF, -Z0, 0, 0xffffff, 10, 3),
+    rectXZ(X0, TX, -Z0, Z0, 0, 0xffffff, 3, 10), rectXZ(-TX, -X0, -Z0, Z0, 0, 0xffffff, 3, 10),
+  ];
+  recolor(top, (x, y, z, c) => c.multiplyScalar(0.84 + 0.16 * smooth(TX, TX - 3, Math.abs(x)) * smooth(TZF, TZF + 3, z) * smooth(TZN, TZN - 2, z)));
+  K.meshes.push(texMesh(top, planksTex(K.R, 31, 50, 68), 13, { patched: true, name: 'table' }));
+  U.push(rbox(2 * TX + 0.2, 0.9, 1.1, EDGE, 0, -0.91, TZN - 0.5, 0.3), rbox(2 * TX + 0.2, 0.9, 1.1, EDGE, 0, -0.91, TZF + 0.5, 0.3));
+  for (const s of [-1, 1]) U.push(rbox(1.1, 0.9, TZN - TZF, EDGE, s * (TX - 0.5), -0.91, (TZN + TZF) / 2, 0.3));
+  U.push(box(2 * TX - 2.6, 1.3, 0.35, APRON, 0, -2.2, TZN - 1.25), box(2 * TX - 2.6, 1.3, 0.35, APRON, 0, -2.2, TZF + 1.25));
+  for (const s of [-1, 1]) U.push(box(0.35, 1.3, TZN - TZF - 2.6, APRON, s * (TX - 1.25), -2.2, (TZN + TZF) / 2));
+  const legP = [[0.45, 0], [0.56, 0.25], [0.47, 0.6], [0.4, 1.6], [0.5, 2.8], [0.68, 3.3], [0.52, 3.8], [0.58, 4.6], [0.72, 5.0], [0.72, 7.1]];
+  for (const sx of [-1, 1]) for (const z of [TZN - 1.2, TZF + 1.2]) {
+    U.push(lathe(legP, LEG, 10, sx * (TX - 1.2), FL, z));
+    K.blob(sx * (TX - 1.2), FL + 0.08, z, 1.4, 1.4, 0.45);
+  }
+
+  // Room: warm floorboards, a patchwork rug in front of the table, sage wainscot.
+  K.meshes.push(texMesh([rectXZ(-RX, RX, BZ, hd + 70, FL, 0xffffff)], planksTex(K.R, 24, 36, 54), 12, { name: 'floor' }));
+  K.blob(0, FL + 0.08, (TZN + TZF) / 2, TX + 1.6, (TZN - TZF) / 2 + 1.6, 0.5);
+  const qw = Math.min(hw + 4, TX - 1), q0 = TZN + 1.6, sq = 2.4, nzq = 5, q1 = q0 + nzq * sq;
+  M.push(rectXZ(-qw - 0.6, qw + 0.6, q0 - 0.6, q1 + 0.6, FL + 0.03, 0xff9f8f), rectXZ(-qw - 0.15, qw + 0.15, q0 - 0.15, q1 + 0.15, FL + 0.04, 0xfff7ec));
+  const nq = Math.round((2 * qw) / sq), qx = (2 * qw) / nq;
+  for (let i = 0; i < nq; i++) for (let j = 0; j < nzq; j++) {
+    const x = -qw + i * qx, z = q0 + j * sq;
+    M.push(rectXZ(x + 0.1, x + qx - 0.1, z + 0.1, z + sq - 0.1, FL + 0.05, FABRIC[(i * 2 + j * 3 + (K.R() < 0.25 ? 1 : 0)) % FABRIC.length]));
+    if ((i + j) % 2 === 0) M.push(disc(0.6, (i + 2 * j) % 3 ? WHITE : 0xff9f8f, x + qx / 2, FL + 0.06, z + sq / 2, 4));
+  }
+  const fz = q0 + 3.4, bkx = -Math.min(hw * 0.5, 7), pfx = Math.min(hw * 0.52, 7.5);
+  K.add(yarnBasket(K), bkx, FL, fz, 0.4);
+  K.blob(bkx, FL + 0.08, fz, 2.7, 2.7, 0.42);
+  K.add(pouf(K), pfx, FL, fz + 1.4);
+  K.blob(pfx, FL + 0.08, fz + 1.4, 2.7, 2.7, 0.4);
+
+  const wall = boxS(2 * RX + 2, TOP - FL, 1, WALL, 0, FL, BZ - 0.5, 1, 8, 1);
+  shadeY(wall, FL, TOP, 0.82, 1.03);
+  M.push(wall, box(2 * RX, 7, 0.3, WAIN, 0, FL, BZ + 0.15));
+  G.push(box(2 * RX, 0.35, 0.45, WHITE, 0, FL + 7, BZ + 0.22), box(2 * RX + 2.8, 0.9, 1.7, CAP, 0, TOP, BZ - 0.5));
+  for (const s of [-1, 1]) {
+    const sw = boxS(1, TOP - FL, SZ - BZ + 1, WALL, s * (RX + 0.5), FL, (SZ + BZ - 1) / 2, 1, 8, 1);
+    shadeY(sw, FL, TOP, 0.76, 0.97);
+    M.push(sw, box(0.3, 7, SZ - BZ, WAIN, s * (RX - 0.15), FL, (SZ + BZ) / 2));
+    G.push(box(0.45, 0.35, SZ - BZ, WHITE, s * (RX - 0.22), FL + 7, (SZ + BZ) / 2), box(0.45, 0.8, SZ - BZ, WHITE, s * (RX - 0.22), FL, (SZ + BZ) / 2));
+    G.push(box(1.7, 0.9, SZ - BZ + 1.7, CAP, s * (RX + 0.5), TOP, (SZ + BZ - 1) / 2));
+    for (let z = BZ + 1; z <= SZ; z += 3) K.blob(s * (RX - 0.6), FL + 0.06, z, 1.5, 2.6, 0.3);
+  }
+
+  // Yarn cubbies along the back wall (their top rows peek over the table), fairy lights
+  // on the top edge, a window with curtains above, embroidery hoops either side.
+  const CW = Math.min(hw + 4, RX - 5), ncol = Math.min(10, Math.max(5, Math.round((2 * CW) / 3.2))), cw = (2 * CW) / ncol;
+  const SD = 3.0, sz = BZ + SD / 2 + 0.1, sy0 = -5.6, STOP = 4.4, rows = 3, ch = (STOP - sy0) / rows, SH = 0xfffaf2;
+  G.push(box(2 * CW + 0.4, sy0 - FL, SD, 0xe8d8c4, 0, FL, sz), box(2 * CW, STOP - sy0, 0.15, 0xf6dccb, 0, sy0, BZ + 0.18));
+  for (let r = 0; r <= rows; r++) G.push(box(2 * CW + 0.4, 0.3, SD, SH, 0, r === rows ? STOP - 0.3 : sy0 + r * ch, sz));
+  for (let c = 0; c <= ncol; c++) G.push(box(0.28, STOP - sy0, SD, SH, -CW + c * cw, sy0, sz));
+  for (let r = 0; r < rows; r++) for (let c = 0; c < ncol; c++) craftCubby(K, G, r === 0 ? 3 : Math.floor(K.R() * 3), -CW + (c + 0.5) * cw, sy0 + r * ch + 0.3, sz + 0.2, cw - 0.28);
+  for (let x = -CW + 1.7, i = Math.floor(K.R() * 4); x < CW - 1.2; x += 4.4, i++) {
+    const k = i % 4;
+    if (k === 0) K.add(pottedPlant(K, 0.8), x, STOP, sz);
+    else if (k === 1) K.add(books(K), x, STOP, sz - 0.3);
+    else if (k === 2) K.add([...put(yarnBall(K, 0.62, K.pick(YARN), 2, 1), -0.5, 0, 0), ...put(yarnBall(K, 0.55, K.pick(YARN), 2, 1), 0.7, 0, 0.3)], x, STOP, sz);
+    else K.add([...spool(K, 1.4, 0.4, K.pick(YARN), undefined, 10, 1), ...put(spool(K, 1.1, 0.34, K.pick(YARN), undefined, 10, 1), 0, 1.4, 0)], x, STOP, sz);
+  }
+  const LB = [0xfff1c4, 0xffd6e0, 0xfff8e6, 0xd8f0ff], lz = sz + SD / 2 + 0.12, nseg = Math.max(3, Math.round((2 * CW) / 4.5)), segW = (2 * CW) / nseg;
+  for (let k = 0; k < nseg; k++) {
+    const a = [-CW + k * segW, STOP - 0.1, lz], b = [-CW + (k + 1) * segW, STOP - 0.1, lz];
+    swag(G, a, b, 0.6, 0x8a7a6a, 0.035, 3);
+    for (let i = 1; i < 5; i++) {
+      const t = i / 5, x = a[0] + (b[0] - a[0]) * t, y = a[1] - Math.sin(t * PI) * 0.6 - 0.14;
+      K.lit.push(ballC(0.15, LB[(k * 4 + i) % LB.length], x, y, lz + 0.04, 0));
+      K.halos.push([x, y, lz + 0.2, 0.55, 0.55, 0.42, 0xffc67a, true]);
+    }
+  }
+  const ww = Math.min(11, hw * 0.9), wy = 6.2, wh = 8.5;
+  K.add(windowView(K, ww, wh, WHITE, true), 0, wy, BZ + 0.05);
+  for (const s of [-1, 1]) K.add(curtain(K, 2.4, wh + 0.6), s * (ww / 2 + 1.4), wy, BZ + 0.9);
+  const HX = ww / 2 + 4.8;
+  [[-HX, 7.6, 1.7, 0xfff7ec, 0], [HX, 7.4, 1.9, 0xeaf4ff, 1], [-(HX + 4.3), 9.4, 1.3, 0xfff0f4, 2]].forEach(([x, y, r, cloth, m]) => {
+    if (Math.abs(x) + r < RX - 1) K.add(hoop(K, r, cloth, m), x, y, BZ + 0.05);
+  });
+  K.add(dressForm(K), CW + 3.2, FL, BZ + 2.8, -0.4);
+  K.blob(CW + 3.2, FL + 0.06, BZ + 2.8, 2.6, 2.4, 0.4);
+  K.add(pottedPlant(K, 4.4), -(CW + 3.0), FL, BZ + 2.6, 0.5);
+  K.blob(-(CW + 3.0), FL + 0.06, BZ + 2.6, 2.8, 2.6, 0.4);
+
+  // On the table, far side: the sewing machine, the lamp, fabric, pencils and a ruler.
+  const smx = -Math.max(hw * 0.22, 2.4), smz = -(hd + 5.6);
+  K.add(sewingMachine(K), smx, 0, smz, 0.04);
+  K.blob(smx + 0.3, 0.02, smz + 0.2, 4.8, 2.6, 0.4);
+  const lampX = Math.max(hw * 0.58, 5), lampZ = -(hd + 6.4), lamp = deskLamp(0xff9f8f);
+  K.add(lamp, lampX, 0, lampZ, -0.3);
+  K.blob(lampX, 0.02, lampZ, 2.0, 1.8, 0.4);
+  const [lbx, lbz] = turn(lamp.bulb[0], lamp.bulb[2], -0.3);
+  K.halos.push([lampX + lbx, lamp.bulb[1], lampZ + lbz + 0.8, 2.0, 1.6, 0.55, 0xffc46b, true], [lampX + lbx, 0.05, lampZ + lbz, 3.4, 2.8, 0.3, 0xffd28a, false]);
+  const fsx = -(hw * 0.75 + 3);
+  K.add(fabricStack(K), fsx, 0, -(hd + 4.6), 0.15);
+  K.blob(fsx, 0.02, -(hd + 4.6), 2.6, 1.9, 0.38, 0.15);
+  K.add(pencilCup(K), hw * 0.18 + 2, 0, -(hd + 3.4));
+  K.blob(hw * 0.18 + 2, 0.02, -(hd + 3.4), 1.1, 1.0, 0.35);
+  K.add(ruler(8), hw * 0.1 + 1, 0, -(hd + 8.8), 0.05);
+  K.add(spool(K, 2.2, 0.62, YARN[1]), lampX + 3.8, 0, lampZ + 2.6);
+  K.blob(lampX + 3.8, 0.02, lampZ + 2.6, 1.0, 1.0, 0.35);
+
+  // Down the left side: scissors, the tomato pincushion, big spools, the button jar.
+  const thr = [];
+  K.add(scissors(), -(hw + 4.6), 0, hd * 0.72, 2.6);
+  K.blob(-(hw + 4.4), 0.02, hd * 0.72 - 0.8, 2.6, 1.3, 0.25, 2.6);
+  K.add(pincushion(K), -(hw + 4.6), 0, hd * 0.3);
+  K.blob(-(hw + 4.6), 0.02, hd * 0.3, 1.8, 1.7, 0.42);
+  const spx = -(hw + 4.6), spz = -hd * 0.12;
+  [[0, 0, 3.0, 0.82, 0], [1.7, 1.1, 2.3, 0.7, 3], [-1.5, 1.3, 1.9, 0.6, 5]].forEach(([dx, dz, h, r, ci]) => {
+    K.add(spool(K, h, r, YARN[ci]), spx + dx, 0, spz + dz);
+    K.blob(spx + dx, 0.02, spz + dz, r * 1.6, r * 1.5, 0.4);
+  });
+  threadLine(K, thr, [[spx + 0.75, 2.4, spz + 0.2], [spx + 1.5, 0.05, spz + 0.6]], -(hw + 1.7), hd * 0.08, YARN[0], 0.5);
+  K.add(buttonJar(K), -(hw + 3.6), 0, -hd * 0.62);
+  K.blob(-(hw + 3.6), 0.02, -hd * 0.62, 1.7, 1.6, 0.42);
+  const BTN = [0xff8fa8, 0x8fd0ff, 0xffd36e, 0x9fe0b4, 0xc9a8ff, 0xffa36b];
+  for (const [dx, dz] of [[1.6, 0.9], [1.4, -1.5], [0.4, 1.9], [-1.6, 1.5]]) K.add(craftButton(K.pick(BTN), K.rnd(0.34, 0.48)), -(hw + 3.6) + dx, 0, -hd * 0.62 + dz, K.R() * TAU);
+
+  // Down the right side: knitting in progress, more yarn, a thimble, a tall spool.
+  K.add(knitting(K, YARN[3]), hw + 3.6, 0, hd * 0.6, -0.3);
+  K.blob(hw + 4.6, 0.02, hd * 0.6, 3.0, 2.0, 0.35, -0.3);
+  const yb = [[hw + 3.9, hd * 0.06, 1.15, YARN[0]], [hw + 6.5, -hd * 0.06, 1.35, YARN[2]]];
+  for (const [x, z, r, c] of yb) { K.add(yarnBall(K, r, c, 4, 2), x, 0, z, K.R() * TAU); K.blob(x, 0.02, z, r * 1.3, r * 1.2, 0.42); }
+  threadLine(K, thr, [[yb[0][0] - 0.9, 0.5, yb[0][1] + 0.5], [yb[0][0] - 1.4, 0.05, yb[0][1] + 0.9]], hw + 1.7, hd * 0.32, YARN[0], 0.45);
+  K.add(thimble(), hw + 3.4, 0, -hd * 0.36);
+  K.blob(hw + 3.4, 0.02, -hd * 0.36, 0.8, 0.8, 0.35);
+  K.add(lyingSpool(K, 2.0, 0.55, YARN[4]), hw + 5.4, 0, -hd * 0.42, 0.5);
+  K.blob(hw + 5.4, 0.02, -hd * 0.42, 1.4, 0.9, 0.3, 0.5);
+  K.add(spool(K, 2.8, 0.78, YARN[5]), hw + 4.2, 0, -hd * 0.78);
+  K.blob(hw + 4.2, 0.02, -hd * 0.78, 1.3, 1.2, 0.4);
+  G.push(...thr);
+
+  // Near strip (seen at every level start): flat, low pieces only.
+  const nzM = (hd + 1.2 + TZN) / 2;
+  K.add(patternPaper(K), -hw * 0.42, 0, nzM, 0.1, ns);
+  K.blob(-hw * 0.42, 0.02, nzM, 3.0 * ns, 2.1 * ns, 0.12, 0.1);
+  K.add(tapeMeasure(K, [[hw * 0.5, nzM + 0.3], [hw * 0.5 - 1.1, nzM - 0.1], [hw * 0.3, hd + 2.3], [hw * 0.02, hd + 2.2], [-hw * 0.07, hd + 3.6], [hw * 0.04, hd + 5.2], [hw * 0.2, TZN - 1.3]]), 0, 0, 0);
+  K.blob(hw * 0.5, 0.02, nzM + 0.3, 1.3, 1.2, 0.3);
+  K.add(thimble(), -hw * 0.82, 0, hd + 2.4, 0, ns);
+  K.blob(-hw * 0.82, 0.02, hd + 2.4, 0.7 * ns, 0.7 * ns, 0.3);
+  K.add(lyingSpool(K, 1.6, 0.42, YARN[0]), hw * 0.8, 0, hd + 2.6, -0.4, ns);
+  K.blob(hw * 0.8, 0.02, hd + 2.6, 1.1 * ns, 0.7 * ns, 0.28, -0.4);
+  for (const [x, z] of [[-hw * 0.08, hd + 1.9], [hw * 0.33, TZN - 1.0], [-hw * 0.72, TZN - 1.2], [hw * 0.66, TZN - 1.6], [-hw * 0.2, TZN - 0.9], [hw * 0.12, hd + 6.2]]) {
+    if (z > TZN - 0.7) continue;
+    K.add(craftButton(K.pick(BTN), K.rnd(0.32, 0.46)), x, 0, z, K.R() * TAU, ns);
+  }
+}
+function spool(K, h, r, thread, wood = 0xebc896, seg = 14, bands = 3) {
+  const f = r * 1.28, p = [cyl(f, f, 0.22, wood, 0, 0, 0, seg), custom(new THREE.CylinderGeometry(r, r, h - 0.44, seg, 1, true).translate(0, h / 2, 0), thread), cyl(f, f, 0.22, wood, 0, h - 0.22, 0, seg), disc(r * 0.3, 0x8a5a36, 0, h + 0.01, 0, 8)];
+  const hi = lighten(thread, 0.4);
+  for (let i = 1; i <= bands; i++) p.push(custom(new THREE.CylinderGeometry(r + 0.02, r + 0.02, 0.06, seg, 1, true).translate(0, 0.25 + (h - 0.44) * (i / (bands + 1)), 0), hi));
+  return p;
+}
+// A spool lying on its side (axis along x), resting on y=0.
+function lyingSpool(K, h, r, thread) {
+  return put(put(spool(K, h, r, thread), 0, -h / 2, 0), 0, r * 1.28, 0, 0, 1, 0, PI / 2);
+}
+function yarnBall(K, r, col, wraps = 5, det = 2) {
+  const p = [ballC(r, col, 0, r, 0, det)], d = darken(col, 0.84);
+  for (let i = 0; i < wraps; i++) {
+    const g = new THREE.TorusGeometry(r * 0.99, r * 0.07, 3, det > 1 ? 18 : 12).rotateX(K.R() * PI).rotateZ(K.R() * PI).translate(0, r, 0);
+    p.push(custom(g, i % 2 ? d : col));
+  }
+  return shadeY(p, 0, 2 * r, 0.78, 1.08);
+}
+// A loose thread from a start (pts0, ending on the table) wandering to (x1, z1).
+function threadLine(K, list, pts0, x1, z1, col, wig = 0.5) {
+  const [x0, , z0] = pts0[pts0.length - 1], len = Math.hypot(x1 - x0, z1 - z0) || 1, n = Math.max(4, Math.round(len / 0.6)), ph = K.R() * TAU;
+  const px = -(z1 - z0) / len, pz = (x1 - x0) / len, pts = [...pts0];
+  for (let i = 1; i <= n; i++) {
+    const t = i / n, w = Math.sin(t * PI * 2.4 + ph) * wig * Math.sin(t * PI);
+    pts.push([x0 + (x1 - x0) * t + px * w, 0.05, z0 + (z1 - z0) * t + pz * w]);
+  }
+  return cord(list, pts, 0.045, col, 4);
+}
+function craftCubby(K, list, kind, cx, y, z, w) {
+  if (kind === 0) {
+    const n = w > 2.75 ? 3 : 2;
+    for (let i = 0; i < n; i++) list.push(...put(yarnBall(K, K.rnd(0.6, 0.76), K.pick(YARN), 1, 1), cx - w / 2 + (i + 0.5) * (w / n), y, z + K.rnd(-0.3, 0.3)));
+  } else if (kind === 1) {
+    let yy = y;
+    for (let i = 0; i < 4; i++) { const h = K.rnd(0.4, 0.55); list.push(box(w - 0.6 - K.rnd(0, 0.3), h, 2.2, K.pick(FABRIC), cx + K.rnd(-0.1, 0.1), yy, z - 0.1)); yy += h; }
+  } else if (kind === 2) {
+    for (let i = 0; i < 3; i++) list.push(...put(spool(K, 1.3, 0.34, K.pick(YARN), undefined, 8, 0), cx + (i - 1) * w * 0.3, y, z + 0.3));
+    for (let i = 0; i < 2; i++) list.push(...put(spool(K, 1.1, 0.3, K.pick(YARN), undefined, 8, 0), cx + (i - 0.5) * w * 0.3, y + 1.3, z + 0.3));
+  } else {
+    list.push(box(w - 0.4, 2.3, 2.4, K.pick(PASTEL), cx, y, z - 0.1), box(w * 0.4, 0.5, 0.06, WHITE, cx, y + 1.3, z + 1.12));
+  }
+}
+function yarnBasket(K) {
+  const W = 0xd9a86a, WD = 0xbf8a4f;
+  const p = [lathe([[1.5, 0], [1.85, 0.3], [2.05, 2.0], [2.1, 2.2]], W, 18), disc(1.98, 0x9a6a44, 0, 1.75, 0, 18)];
+  jitter(p.slice(0, 1), K.R, 0.1);
+  for (let i = 0; i < 4; i++) p.push(thinRing(1.84 + i * 0.06, 0.07, WD, 0, 0.45 + i * 0.45, 0, PI / 2, 18));
+  p.push(thinRing(2.1, 0.15, WD, 0, 2.2, 0, PI / 2, 20));
+  [[-0.7, -0.5], [0.75, -0.35], [0.0, 0.7], [-0.15, -0.1]].forEach(([x, z], i) => p.push(...put(yarnBall(K, i === 3 ? 0.85 : 0.75, K.pick(YARN), 3, 1), x, i === 3 ? 2.0 : 1.55, z)));
+  p.push(rod([0.3, 2.2, 0.2], [1.6, 4.0, -0.6], 0.07, 0.07, 0xffd36e, 5), ballC(0.16, 0xff8f9f, 1.6, 4.0, -0.6, 0), rod([0.0, 2.2, 0.4], [1.1, 4.1, 0.9], 0.07, 0.07, 0xffd36e, 5), ballC(0.16, 0xff8f9f, 1.1, 4.1, 0.9, 0));
+  return p;
+}
+function pouf(K) {
+  const C = 0xbcdcec, p = [dome(2.2, 1.7, 2.2, C, 0, 0, 0, 20, 6)];
+  for (let i = 0; i < 6; i++) p.push(custom(new THREE.TorusGeometry(1, 0.04, 3, 16, PI).scale(2.21, 1.71, 2.21).rotateY(i * PI / 6), darken(C, 0.86)));
+  shadeY(p, 0, 1.7, 0.78, 1.06);
+  p.push(ballC(0.22, darken(C, 0.8), 0, 1.78, 0, 1));
+  return p;
+}
+function dressForm(K) {
+  const F = 0xffb8bf, W = 0xc89262, p = [];
+  for (let i = 0; i < 3; i++) { const a = (i / 3) * TAU + 0.3; p.push(rod([0, 2.6, 0], [Math.cos(a) * 2.1, 0, Math.sin(a) * 2.1], 0.15, 0.12, W, 6)); }
+  p.push(cyl(0.34, 0.34, 0.5, W, 0, 2.3, 0, 10), rod([0, 2.6, 0], [0, 7.3, 0], 0.17, 0.17, W, 8));
+  const torso = lathe([[0.25, 7.0], [1.75, 7.15], [2.05, 8.1], [1.62, 9.6], [1.48, 10.2], [1.85, 11.4], [2.0, 12.3], [1.72, 13.1], [0.62, 13.55], [0.5, 14.2], [0.66, 14.45], [0.01, 14.55]], F, 18);
+  put(torso, 0, 0, 0, 0, [1, 1, 0.82]);
+  shadeY(torso, 7, 14.5, 0.84, 1.06);
+  p.push(torso, custom(new THREE.TorusGeometry(0.7, 0.09, 4, 14).rotateX(PI / 2 - 0.25).translate(0, 13.5, 0), 0xffe27a));
+  for (const sx of [-0.42, 0.42]) p.push(box(0.34, 3.0, 0.05, 0xffe27a, sx, 10.4, 1.74));
+  for (const [x, z, c] of [[-1.2, 0.3, 0xff8fa8], [-0.9, -0.4, 0xffd23f], [1.1, 0.2, 0x8fdcc4]]) p.push(rod([x, 12.6, z], [x * 1.25, 13.4, z * 1.4], 0.03, 0.03, CHROME, 3), ballC(0.13, c, x * 1.25, 13.4, z * 1.4, 0));
+  return p;
+}
+function hoop(K, r, cloth, motif) {
+  const p = [vdisc(r, cloth, 0, 0, 0.06, 24), thinRing(r + 0.02, 0.13, 0xe0ab70, 0, 0, 0.1, 0, 24), thinRing(r + 0.17, 0.08, 0xc8915a, 0, 0, 0.1, 0, 24), box(0.36, 0.5, 0.3, 0xc8915a, 0, r + 0.05, -0.05)];
+  if (motif === 0) {
+    const c = K.pick([0xff8fa8, 0xffb36b, 0xb9a6f0]);
+    for (let i = 0; i < 5; i++) { const a = (i / 5) * TAU + PI / 2; p.push(vdisc(r * 0.2, c, Math.cos(a) * r * 0.22, r * 0.12 + Math.sin(a) * r * 0.22, 0.08, 10)); }
+    p.push(vdisc(r * 0.13, 0xffd23f, 0, r * 0.12, 0.09, 10), box(0.08, r * 0.62, 0.02, 0x5fae5a, 0, -r * 0.62, 0.08));
+    p.push(...put([vdisc(r * 0.12, 0x6cc46b, 0, 0, 0, 8)], r * 0.13, -r * 0.35, 0.08, 0, [1.5, 0.7, 1]));
+  } else if (motif === 1) {
+    const hs = new THREE.Shape(); hs.moveTo(0, -0.7); hs.bezierCurveTo(-1.2, 0.1, -0.7, 1.0, 0, 0.45); hs.bezierCurveTo(0.7, 1.0, 1.2, 0.1, 0, -0.7);
+    p.push(shapeZ(hs, 0xff8fa8, 0, 0, 0.08, r * 0.55));
+  } else {
+    [0xff8fa8, 0xffb36b, 0xffe27a, 0x8fdcc4, 0x8fc8ff].forEach((c, i) => p.push(custom(new THREE.RingGeometry(r * (0.5 - i * 0.07), r * (0.57 - i * 0.07), 16, 1, 0, PI).translate(0, -r * 0.2, 0.08 + i * 0.002), c)));
+  }
+  return p;
+}
+function pincushion(K) {
+  const RED = 0xff7f86, p = [egg(1.45, 0.95, 1.45, RED, 0, 0.92, 0, 14, 9)];
+  for (let i = 0; i < 6; i++) p.push(custom(new THREE.TorusGeometry(1, 0.05, 3, 18).scale(1.46, 0.96, 1.46).rotateY(i * PI / 6).translate(0, 0.92, 0), 0xe8646e));
+  shadeY(p, 0, 1.9, 0.78, 1.08);
+  p.push(custom(new THREE.ExtrudeGeometry(starShape(0.8, 0.42, 5), { depth: 0.1, bevelEnabled: false }).rotateX(-PI / 2).translate(0, 1.82, 0), 0x6cc46b), cyl(0.09, 0.12, 0.4, 0x4fa64a, 0, 1.85, 0, 6));
+  const heads = [0xffd23f, 0x5cc8ff, 0xffffff, 0xb48cff, 0x7be07a, 0xff5c8a];
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * TAU + K.R() * 0.4, e = K.rnd(0.25, 1.0), ce = Math.cos(e), se = Math.sin(e);
+    const b = [1.3 * ce * Math.cos(a), 0.92 + 0.86 * se, 1.3 * ce * Math.sin(a)], t = [b[0] + ce * Math.cos(a) * 0.75, b[1] + se * 0.75 + 0.2, b[2] + ce * Math.sin(a) * 0.75];
+    p.push(rod(b, t, 0.035, 0.035, CHROME, 3), ballC(0.15, heads[i % heads.length], t[0], t[1], t[2], 0));
+  }
+  cord(p, [[1.1, 1.1, 0.7], [1.8, 0.9, 1.0], [2.2, 0.62, 1.12]], 0.03, 0x4fa64a);
+  p.push(custom(new THREE.ConeGeometry(0.3, 0.6, 8).rotateX(PI).translate(2.25, 0.3, 1.15), 0xff5a6e));
+  return p;
+}
+function buttonJar(K) {
+  const s = [], BTN = [0xff8fa8, 0x8fd0ff, 0xffd36e, 0x9fe0b4, 0xc9a8ff, 0xffffff, 0xffa36b];
+  for (let i = 0; i < 26; i++) {
+    const y = 0.15 + (i / 26) * 1.6 + K.rnd(-0.1, 0.1), a = K.R() * TAU, d = Math.sqrt(K.R()) * 0.8;
+    s.push(...put([cyl(0.32, 0.32, 0.1, K.pick(BTN), 0, -0.05, 0, 7)], Math.cos(a) * d, y, Math.sin(a) * d, K.R() * TAU, 1, K.rnd(-0.6, 0.6), K.rnd(-0.6, 0.6)));
+  }
+  s.push(cyl(1.08, 1.08, 0.42, 0xff9fb2, 0, 2.55, 0, 16), disc(1.08, 0xffd2dc, 0, 2.98, 0, 16), torus(1.1, 0.08, WHITE, 0, 2.62, 0, PI / 2, 16));
+  s.push(panel(1.2, 0.75, WHITE, 0, 0.75, 1.25), panel(0.9, 0.12, 0xff7f86, 0, 1.1, 1.26));
+  return { s, g: [lathe([[0, 0], [1.15, 0], [1.22, 0.15], [1.22, 2.2], [1.05, 2.5], [1.0, 2.6]], 0xe8f6ff, 18)] };
+}
+function craftButton(col, r = 0.42) {
+  const d = darken(col, 0.8);
+  return [cyl(r, r, 0.14, col, 0, 0, 0, 12), ringXZ(r * 0.62, r * 0.74, d, 0, 0.145, 0, 12), ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, b]) => disc(0.055, d, a * r * 0.2, 0.15, b * r * 0.2, 6))];
+}
+function scissors() {
+  const H = 0xff8a8a;
+  const blade = (a) => custom(new THREE.ConeGeometry(0.34, 4.0, 4).rotateZ(-PI / 2).scale(1, 0.22, 1).translate(2.0, 0.1, 0).rotateY(a), CHROME);
+  const p = [blade(0.1), blade(-0.1)];
+  for (const s of [-1, 1]) {
+    p.push(rod([0, 0.12, 0], [-1.0, 0.12, s * 0.62], 0.13, 0.13, H, 6));
+    p.push(custom(new THREE.TorusGeometry(0.62, 0.17, 6, 16).rotateX(PI / 2).scale(1.25, 1, 1).translate(-1.75, 0.17, s * 0.85), H));
+  }
+  p.push(cyl(0.2, 0.2, 0.14, CHROME_D, 0, 0.18, 0, 10));
+  return p;
+}
+function fabricStack(K) {
+  const p = [], o = Math.floor(K.R() * FABRIC.length);
+  let y = 0;
+  for (let i = 0; i < 5; i++) {
+    const h = K.rnd(0.36, 0.5), c = FABRIC[(i * 2 + o) % FABRIC.length];
+    p.push(custom(new RoundedBoxGeometry(4.2 - i * 0.12, h, 2.9, 1, 0.14).rotateY(K.rnd(-0.05, 0.05)).translate(K.rnd(-0.15, 0.15), y + h / 2, K.rnd(-0.1, 0.1)), c));
+    p.push(box(3.8 - i * 0.12, 0.05, 0.05, darken(c, 0.82), 0, y + h * 0.5, 1.58));
+    y += h;
+  }
+  for (let i = 0; i < 9; i++) p.push(disc(0.15, WHITE, -1.4 + (i % 3) * 1.2 + (Math.floor(i / 3) % 2) * 0.6, y + 0.012, -0.9 + Math.floor(i / 3) * 0.9, 8));
+  p.push(box(0.34, y + 0.05, 3.0, 0xff8f9f, 0.9, 0, 0), torus(0.3, 0.09, 0xff8f9f, 0.62, y + 0.14, 0, PI / 2, 10), torus(0.3, 0.09, 0xff8f9f, 1.18, y + 0.14, 0, PI / 2, 10));
+  return p;
+}
+function sewingMachine(K) {
+  const B = 0x9fdcc6, CR = 0xfff6ea, TH = 0xff8f9f;
+  const p = [
+    rbox(7.8, 0.9, 3.6, CR, 0, 0, 0, 0.3), rbox(2.0, 4.8, 2.6, B, 2.6, 0.7, -0.2, 0.6), rbox(7.2, 1.9, 2.5, B, -0.2, 4.4, -0.2, 0.8),
+    rbox(1.7, 3.1, 2.3, B, -3.0, 2.2, -0.2, 0.55),
+  ];
+  shadeY(p, 0, 6.3, 0.86, 1.05);
+  p.push(box(5.4, 0.14, 0.06, GOLD, -0.4, 5.3, 1.06), cyl(1.15, 1.15, 0.42, CR, 3.85, 4.9, -0.2, 20, 0, PI / 2), cyl(0.42, 0.42, 0.5, CHROME, 4.05, 4.9, -0.2, 10, 0, PI / 2),
+    vdisc(0.5, CR, 2.6, 3.3, 1.12, 16), box(0.1, 0.42, 0.05, INK, 2.6, 3.3, 1.14),
+    rod([-3.25, 2.3, 0.62], [-3.25, 1.05, 0.62], 0.06, 0.06, CHROME, 5), rod([-2.85, 2.3, 0.5], [-2.85, 1.15, 0.5], 0.09, 0.09, CHROME, 5),
+    box(0.75, 0.12, 0.6, CHROME, -2.95, 0.98, 0.62), box(1.6, 0.04, 1.3, CHROME_D, -3.0, 0.9, 0.45),
+    rod([0.9, 6.3, -0.2], [0.9, 7.5, -0.2], 0.05, 0.05, CHROME, 5));
+  p.push(...put(spool(K, 1.1, 0.36, TH, undefined, 10, 1), 0.9, 6.3, -0.2));
+  cord(p, [[0.9, 7.0, 0.2], [-0.8, 6.85, 0.95], [-2.6, 6.45, 1.0], [-3.35, 4.9, 0.98], [-3.3, 2.4, 0.72], [-3.25, 1.3, 0.64]], 0.03, TH, 3);
+  p.push(box(3.6, 0.06, 2.2, 0xffd6b4, -2.7, 0.9, 0.6));
+  for (let i = 0; i < 6; i++) p.push(box(0.3, 0.03, 0.07, TH, -4.2 + i * 0.5, 0.96, 1.2));
+  return p;
+}
+function deskLamp(col) {
+  const s = [cyl(1.4, 1.6, 0.45, col, 0, 0, 0, 18), ballC(0.3, CHROME, 0, 0.7, 0, 1)];
+  const a = [0, 0.6, 0], b = [-1.4, 4.6, 0.2], c = [1.2, 7.4, 0.5];
+  s.push(rod(a, b, 0.13, 0.13, CHROME_D, 6), rod([0.3, 0.6, 0], [b[0] + 0.3, b[1], b[2]], 0.05, 0.05, CHROME_D, 4), ballC(0.32, col, ...b, 1), rod(b, c, 0.12, 0.12, CHROME_D, 6), ballC(0.26, col, ...c, 1));
+  const shade = lathe([[1.7, 0], [1.55, 0.35], [1.0, 1.35], [0.5, 1.8], [0.3, 2.05]], col, 18);
+  s.push(...put([shade], c[0] + 0.8, c[1] - 2.1, c[2], 0, 1, 0, -0.3));
+  return { s, l: [ballC(0.62, 0xfff3c8, c[0] + 0.75, c[1] - 1.75, c[2], 1)], bulb: [c[0] + 0.8, c[1] - 2.0, c[2]] };
+}
+function pencilCup(K) {
+  const p = [cyl(0.85, 0.75, 1.9, 0xbfe4f4, 0, 0, 0, 14), torus(0.85, 0.08, WHITE, 0, 1.9, 0, PI / 2, 14), disc(0.8, 0x6b5a50, 0, 1.7, 0, 14)];
+  const cols = [0xff6f7a, 0xffd23f, 0x5fd16a, 0x4fa3ff, 0xb07cff, 0xff9a3a];
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * TAU + 0.3, b = [Math.cos(a) * 0.35, 0.4, Math.sin(a) * 0.35], h = K.rnd(3.0, 3.7);
+    const d = new THREE.Vector3(Math.cos(a) * 0.28, 1, Math.sin(a) * 0.28).normalize();
+    const t = [b[0] + d.x * h, b[1] + d.y * h, b[2] + d.z * h], tip = [t[0] + d.x * 0.5, t[1] + d.y * 0.5, t[2] + d.z * 0.5];
+    p.push(rod(b, t, 0.13, 0.13, cols[i], 6), rod(t, tip, 0.13, 0.02, 0xf6d6a8, 6));
+  }
+  return p;
+}
+function ruler(len) {
+  const p = [box(len, 0.14, 1.1, 0xfff1b8, 0, 0, 0)];
+  for (let i = 0, x = -len / 2 + 0.3; x < len / 2 - 0.2; i++, x += 0.4) p.push(box(0.05, 0.02, i % 5 ? 0.25 : 0.5, 0x8a6a4a, x, 0.14, -0.55 + (i % 5 ? 0.125 : 0.25)));
+  return p;
+}
+const thimble = () => [lathe([[0, 0], [0.55, 0], [0.6, 0.12], [0.56, 0.85], [0.42, 1.1], [0, 1.18]], CHROME, 14), torus(0.6, 0.06, GOLD, 0, 0.12, 0, PI / 2, 14)];
+function knitting(K, col) {
+  const p = [...yarnBall(K, 1.3, col, 6, 2)], d = darken(col, 0.84), sw = [box(2.6, 0.16, 3.0, col, 0, 0, 0)];
+  for (let i = 0; i < 6; i++) sw.push(box(0.12, 0.05, 2.9, d, -1.0 + i * 0.4, 0.16, 0));
+  p.push(...put(sw, 2.9, 0, 0.6, 0.2));
+  p.push(rod([1.2, 0.3, -0.7], [4.9, 0.32, -1.6], 0.08, 0.08, 0xd9a066, 6), ballC(0.2, 0xff8fa8, 1.2, 0.3, -0.7, 1), rod([1.6, 0.3, -1.5], [4.6, 0.36, -0.4], 0.08, 0.08, 0xd9a066, 6), ballC(0.2, 0x8fdcc4, 1.6, 0.3, -1.5, 1));
+  return cord(p, [[1.0, 1.0, 0.5], [1.5, 0.35, 0.6], [1.9, 0.12, 0.2]], 0.05, col);
+}
+// Tape measure: the case at pts[0], the yellow tape (with tick marks) along the rest.
+function tapeMeasure(K, pts) {
+  const p = [], [cx, cz] = pts[0];
+  p.push(cyl(1.0, 1.0, 0.72, 0xff9f8f, cx, 0, cz, 20), cyl(0.56, 0.56, 0.06, WHITE, cx, 0.72, cz, 16), cyl(0.24, 0.24, 0.1, CHROME, cx, 0.76, cz, 10));
+  const curve = new THREE.CatmullRomCurve3(pts.slice(1).map(([x, z]) => new THREE.Vector3(x, 0, z)));
+  const sp = curve.getSpacedPoints(Math.max(8, Math.round(curve.getLength() / 0.3))).map((v) => [v.x, v.z]);
+  p.push(...groundRibbon(sp, 0.62, 0xffe27a, 0.035));
+  for (let i = 1; i < sp.length - 1; i++) {
+    const [x, z] = sp[i], [dx, dz] = norm2(sp[i + 1][0] - sp[i - 1][0], sp[i + 1][1] - sp[i - 1][1]), L = i % 5 ? 0.16 : 0.32, nx = -dz, nz = dx;
+    p.push(...put([box(0.045, 0.01, L, 0x6b4a3a, 0, 0, 0)], x + nx * (0.31 - L / 2), 0.04, z + nz * (0.31 - L / 2), Math.atan2(nx, nz)));
+  }
+  const [ex, ez] = sp[sp.length - 1], [dx, dz] = norm2(ex - sp[sp.length - 2][0], ez - sp[sp.length - 2][1]);
+  p.push(...put([box(0.72, 0.22, 0.2, CHROME, 0, 0, 0)], ex, 0.03, ez, Math.atan2(-dx, -dz)));
+  return p;
+}
+function patternPaper(K) {
+  const p = [flat(5.6, 3.8, 0xfbf1dc, 0, 0.02, 0), flat(4.8, 3.2, 0xfff9ee, 0.5, 0.03, 0.2, 0.12)];
+  const out = [[-1.7, 1.3], [-1.1, -1.3], [0.1, -1.4], [0.5, -0.9], [1.8, -1.1], [1.7, 1.3], [-1.7, 1.3]];
+  for (let k = 0; k + 1 < out.length; k++) {
+    const [ax, az] = out[k], [bx, bz] = out[k + 1], n = Math.floor(Math.hypot(bx - ax, bz - az) / 0.34), ang = Math.atan2(-(bz - az), bx - ax);
+    for (let i = 0; i < n; i++) { const t = (i + 0.3) / n; p.push(...put([box(0.18, 0.012, 0.06, 0x7d8fd8, 0, 0, 0)], ax + (bx - ax) * t, 0.045, az + (bz - az) * t, ang)); }
+  }
+  p.push(box(0.05, 0.012, 1.6, 0x7d8fd8, 0.3, 0.045, 0.1), custom(new THREE.ConeGeometry(0.16, 0.3, 3).rotateX(-PI / 2).translate(0.3, 0.06, -0.8), 0x7d8fd8));
+  for (const [x, z, a, c] of [[-1.9, -1.5, 0.4, 0xff8fa8], [2.0, 1.5, -0.7, 0xffd23f], [1.9, -1.4, 2.0, 0x8fdcc4]]) p.push(...put([rod([0, 0, 0], [1.1, 0, 0], 0.03, 0.03, CHROME, 3), ballC(0.13, c, 0, 0, 0, 0)], x, 0.08, z, a));
+  return p;
+}
+
+// ============================================================== FUN FAIR
+const BULB = [0xfff1b0, 0xffd0dc, 0xd2f0ff, 0xfff8e6, 0xe2d4ff];
+const PENNANT = [0xff8fb0, 0xffd36e, 0x8fdcc4, 0x9fc8ff, 0xc9b2ff];
+const BALLOON = [0xff7f9f, 0xffd36e, 0x7fd8ff, 0x9fe08a, 0xc9a2ff, 0xff9f6a];
+function fair(K) {
+  const { hw, hd, ns } = K;
+  K.shadow = 0x3f6b3a;
+  const G = K.glossy;
+  const X0 = hw + 0.5, Z0 = hd + 0.5, PB = 2.4, PX = X0 + PB, PZ = Z0 + PB;
+  const FZ = -(hd + 27);
+  const Rw = 7.6, hubY = Rw + 3.0, wheelX = -Math.max(hw * 0.42, 4.6), wheelZ = -(hd + 10.5);
+  const Rc = 4.6, carX = Math.max(hw * 0.5, 5) + 4.5, carZ = -(hd + 8.6);
+  const tied = [], free = [];
+  K.claim(wheelX, wheelZ, Rw + 1); K.claim(carX, carZ, Rc + 1.4);
+
+  // Ground: grass patches, clover, a cobbled plaza ring and paths out to the rides.
+  const dots = [];
+  for (let i = 0; i < 46; i++) {
+    const [x, z] = K.around(PB + 2.4, 28, 18), r = K.rnd(1.6, 4.0);
+    dots.push([x, 0.01 + (i % 4) * 0.01, z, r, K.pick([0x86c86a, 0x9ad77c, 0x80c066, 0xa6dd88]), 12, 1, K.rnd(0.6, 1), K.R() * PI]);
+  }
+  for (let i = 0; i < 120; i++) { const [x, z] = K.around(PB + 1.4, 26, 18); dots.push([x, 0.09, z, 0.13, K.pick([0xffffff, 0xfff27a, 0xffc2dc, 0xffffff]), 5]); }
+  const CB = [0xf6ead9, 0xf0e0cb, 0xfaf1e4, 0xead8c2], PAVE = 0xdcc6aa;
+  K.flat.push(rectXZ(-PX, PX, Z0, PZ, 0.02, PAVE), rectXZ(-PX, PX, -PZ, -Z0, 0.02, PAVE), rectXZ(X0, PX, -Z0, Z0, 0.02, PAVE), rectXZ(-PX, -X0, -Z0, Z0, 0.02, PAVE));
+  for (let z = -PZ + 0.5, row = 0; z < PZ; z += 0.95, row++) for (let x = -PX + 0.5 + (row % 2) * 0.47; x < PX; x += 0.95) {
+    if (Math.abs(x) < X0 + 0.1 && Math.abs(z) < Z0 + 0.1) continue;
+    dots.push([x, 0.03, z, K.rnd(0.36, 0.42), K.pick(CB), 5, 1, 1, K.R()]);
+  }
+  for (let t = -PX; t <= PX + 0.01; t += 1.0) dots.push([t, 0.04, PZ, 0.42, 0xc9b192, 5], [t, 0.04, -PZ, 0.42, 0xc9b192, 5]);
+  for (let t = -PZ; t <= PZ + 0.01; t += 1.0) dots.push([PX, 0.04, t, 0.42, 0xc9b192, 5], [-PX, 0.04, t, 0.42, 0xc9b192, 5]);
+  const path = (ctrl, w) => {
+    const sp = new THREE.CatmullRomCurve3(ctrl.map(([x, z]) => new THREE.Vector3(x, 0, z))).getSpacedPoints(40).map((v) => [v.x, v.z]);
+    K.flat.push(...groundRibbon(sp, w, PAVE, 0.022, K.R, 0.05));
+    for (const [x, z] of sp) dots.push([x + K.rnd(-0.32, 0.32) * w, 0.032, z + K.rnd(-0.32, 0.32) * w, 0.34, K.pick(CB), 6]);
+  };
+  path([[wheelX * 0.6, -PZ + 0.3], [wheelX * 0.9, wheelZ + 5.8], [wheelX, wheelZ + 3.8]], 3.0);
+  path([[carX * 0.55, -PZ + 0.3], [carX * 0.8, carZ + Rc + 1.8], [carX, carZ + Rc + 0.6]], 3.0);
+  path([[0, PZ - 0.3], [hw * 0.08, hd + 14], [-hw * 0.1, hd + 30]], 3.4);
+  for (let i = 0; i < 70; i++) dots.push([K.rnd(-hw, hw), 0.1, K.rnd(PZ + 0.4, hd + 16), 0.11, K.pick(PENNANT), 4, 1.8, 0.7, K.R() * PI]);
+
+  // Near side (low): a hook-a-duck pool, a flower planter, a bench, hay bales, balloons.
+  const nz = hd + PB + 3.4 * ns;
+  K.add(duckPool(K, 2.1 * ns), -hw * 0.42, 0, nz + 0.4);
+  K.blob(-hw * 0.42, 0.02, nz + 0.4, 2.7 * ns, 2.7 * ns, 0.3);
+  K.add(planter(K, 3.6), hw * 0.42, 0, nz - 0.6, 0.08, ns);
+  K.blob(hw * 0.42, 0.02, nz - 0.6, 2.2 * ns, 0.9 * ns, 0.3, 0.08);
+  K.add(parkBench(0xff9fb8), hw * 0.5, 0, nz + 3.6 * ns, -0.1, ns);
+  K.blob(hw * 0.5, 0.02, nz + 3.6 * ns, 2.0 * ns, 0.9 * ns, 0.3, -0.1);
+  for (let i = 0; i < 14; i++) dots.push([hw * 0.5 + K.rnd(-1.6, 1.6), 0.09, nz + 3.6 * ns + K.rnd(0.6, 1.6), 0.12, K.pick([0xfff6e0, 0xffe9a8]), 5]);
+  for (const [x, z, ry] of [[-(hw + 3.8), hd + 3.4, 0.3], [-(hw + 5.9), hd + 4.8, 1.4]]) { K.add(hayBale(), x, 0, z, ry); K.blob(x, 0.02, z, 1.9, 1.5, 0.38, ry); }
+  for (const [fx, fzz] of [[-hw * 0.78, hd + 9.5], [-hw * 0.3, hd + 11.5], [hw * 0.3, hd + 12.5], [hw * 0.85, hd + 10.5], [-hw * 0.62, hd + 15], [hw * 0.62, hd + 16]]) {
+    K.add(flowerClump(K, 0.9, K.pick(FLOWER)), fx, 0, fzz, K.R() * TAU);
+    K.blob(fx, 0.02, fzz, 1.0, 0.9, 0.22);
+  }
+  const bsx = hw + 3.3, bsz = hd + 3.2;
+  K.add([cyl(0.5, 0.6, 0.35, 0xff9fb8, 0, 0, 0, 12), ...[0, 1, 2, 3, 4].map((i) => cyl(0.1, 0.1, 0.32, i % 2 ? 0xff9fb8 : WHITE, 0, 0.35 + i * 0.32, 0, 8)), ballC(0.18, GOLD, 0, 2.0, 0, 1)], bsx, 0, bsz);
+  K.blob(bsx, 0.02, bsz, 0.9, 0.9, 0.35);
+  for (let i = 0; i < 6; i++) { const a = (i / 6) * TAU + K.R(), d = K.rnd(0.5, 1.2); tied.push([bsx, 1.95, bsz, bsx + Math.cos(a) * d, K.rnd(4.4, 5.7), bsz + Math.sin(a) * d * 0.7, BALLOON[i % BALLOON.length]]); }
+
+  // String lights down both sides and pennant bunting across the far side.
+  const LX = PX + 0.6, PH = 6.2, fzL = -(PZ + 0.6), nl = Math.max(3, Math.round((hd + 1 - fzL) / 8) + 1);
+  for (const s of [-1, 1]) {
+    let prev = null;
+    for (let i = 0; i < nl; i++) {
+      const z = fzL + (hd + 1 - fzL) * (i / (nl - 1)), x = s * LX;
+      K.add(lightPost(PH), x, 0, z);
+      K.blob(x, 0.02, z, 0.7, 0.7, 0.35);
+      const top = [x, PH - 0.3, z];
+      if (prev) lightString(K, prev, top, 1.1, 0.95, false);
+      prev = top;
+    }
+  }
+  const nf = Math.max(3, Math.round((2 * LX) / 8) + 1);
+  for (let i = 0, prev = null; i < nf; i++) {
+    const x = -LX + 2 * LX * (i / (nf - 1));
+    if (i > 0 && i < nf - 1) { K.add(lightPost(PH), x, 0, fzL); K.blob(x, 0.02, fzL, 0.7, 0.7, 0.35); }
+    const top = [x, PH - 0.3, fzL];
+    if (prev) lightString(K, prev, top, 1.2, 0.9, true);
+    prev = top;
+  }
+
+  // Game stalls down the sides (facing the board), a popcorn cart, the ticket booth.
+  const SX = PX + 4.4, STC = [0xff9fb8, 0x8fdcc4, 0xffd36e];
+  [[-1, hd * 0.42], [-1, -hd * 0.3], [1, -hd * 0.22]].forEach(([s, z], i) => {
+    const ry = -s * PI / 2;
+    K.add(fairStall(K, STC[i], i % 2), s * SX, 0, z, ry);
+    K.blob(s * SX, 0.02, z, 2.6, 3.6, 0.38);
+    K.claim(s * SX, z, 4);
+    for (const lx of [-2.95, 2.95]) {
+      const [ox, oz] = turn(lx, 2.3, ry), [bx, bz] = turn(lx * 1.08, 2.7, ry);
+      tied.push([s * SX + ox, 4.0, z + oz, s * SX + bx, K.rnd(5.6, 6.4), z + bz, K.pick(BALLOON)]);
+    }
+  });
+  K.add(popcornCart(K), SX - 0.6, 0, hd * 0.45, -PI / 2);
+  K.blob(SX - 0.6, 0.02, hd * 0.45, 1.6, 2.2, 0.38);
+  K.claim(SX - 0.6, hd * 0.45, 2.8);
+  const tbx = -(hw + 4.8), tbz = -(PZ + 3.4), tb = ticketBooth(K);
+  K.add(tb, tbx, 0, tbz);
+  K.blob(tbx, 0.02, tbz, 2.2, 2.0, 0.4);
+  K.halos.push([tbx, 2.35, tbz + 1.9, 1.3, 1.3, 0.45, 0xffc27a, true]);
+  K.claim(tbx, tbz, 2.6);
+
+  // The Ferris wheel (gondolas stay level as it turns) and the carousel (horses bob).
+  const fw = ferrisWheel(K, Rw, hubY);
+  K.add(fw.frame, wheelX, 0, wheelZ);
+  K.blob(wheelX, 0.02, wheelZ, Rw * 0.78, 3.6, 0.42);
+  const wm = new THREE.Mesh(merge(fw.rotor), fw.mat);
+  wm.name = 'ferris'; wm.position.set(wheelX, hubY, wheelZ); wm.frustumCulled = false;
+  K.meshes.push(wm);
+  K.tick.push((t) => { const a = t * 0.16; wm.rotation.z = a; fw.ang.value = a; });
+  const cr = carousel(K, Rc);
+  K.add(cr.base, carX, 0, carZ);
+  K.blob(carX, 0.02, carZ, Rc + 1.3, Rc + 1.1, 0.42);
+  const cm = new THREE.Mesh(merge(cr.rotor), cr.mat);
+  cm.name = 'carousel'; cm.position.set(carX, 0, carZ); cm.frustumCulled = false;
+  K.meshes.push(cm);
+  K.tick.push((t) => { cm.rotation.y = t * 0.32; cr.time.value = t; });
+  for (let i = 0; i < 8; i++) { const a = (i / 8) * TAU; K.halos.push([carX + Math.cos(a) * (Rc + 0.9), 5.0, carZ + Math.sin(a) * (Rc + 0.9) + 0.3, 1.3, 1.0, 0.32, 0xffc27a, true]); }
+
+  // Beyond: a striped big top, a white fence, trees, rolling hills, warm clouds.
+  const btx = Math.max(hw * 0.12, 1.5) + 1.5, btz = -(hd + 21);
+  K.add(bigTop(K, 5.6), btx, 0, btz);
+  K.blob(btx, 0.02, btz, 6.6, 6.2, 0.4);
+  K.claim(btx, btz, 6.4); K.claim(wheelX, wheelZ - 4, 6);
+  G.push(...picketFence(-(hw + 20), FZ, hw + 20, FZ, 2.0, 1.0));
+  for (let x = -(hw + 20); x < hw + 20; x += 2.6) K.blob(x, 0.02, FZ + 0.3, 1.2, 0.5, 0.22);
+  const LEAF = [0x7fcf6a, 0x8fd87a, 0x72c460, 0xffc2d6];
+  const tree = (x, z, h, crr, leaf, far) => {
+    if (!K.free(x, z, crr + 0.4)) return;
+    K.claim(x, z, crr + 0.4);
+    K.add(far ? farTree(K, h, crr, leaf) : roundTree(K, h, crr, leaf), x, 0, z, K.R() * TAU);
+    K.blob(x + 0.4, 0.02, z + 0.4, crr * 1.1, crr * 0.95, 0.34);
+  };
+  for (const s of [-1, 1]) for (let i = 0; i < 5; i++) tree(s * (hw + K.rnd(11, 24)), K.rnd(-(hd + 8), hd + 12), K.rnd(5, 7.5), K.rnd(1.8, 2.6), K.pick(LEAF), i > 0);
+  for (let x = -(hw + 30); x <= hw + 30; x += K.rnd(6.5, 9.5)) tree(x, FZ - K.rnd(2.5, 9), K.rnd(6, 8.5), K.rnd(2.2, 2.9), K.pick(LEAF), true);
+  for (let i = 0; i < 6; i++) {
+    const rx = K.rnd(12, 22), ry = K.rnd(3.5, 7), h = dome(rx, ry, K.rnd(8, 14), K.pick([0x8cc96a, 0x9fd47c, 0x80bf60]), K.rnd(-(hw + 60), hw + 60), -0.3, FZ - K.rnd(14, 40), 16, 5);
+    shadeY(h, 0, ry, 0.82, 1.08);
+    K.matte.push(h);
+  }
+  for (const s of [-1, 1]) for (let i = 0; i < 2; i++) {
+    const h = dome(K.rnd(9, 15), K.rnd(3, 6), K.rnd(9, 14), K.pick([0x8cc96a, 0x9fd47c]), s * (hw + K.rnd(30, 42)), -0.3, K.rnd(-hd, hd + 10), 16, 5);
+    shadeY(h, 0, 6, 0.85, 1.06);
+    K.matte.push(h);
+  }
+  for (let i = 0; i < 4; i++) free.push([K.rnd(-(hw + 8), hw + 8), K.rnd(1.5, 3), -(hd + K.rnd(6, 22)), BALLOON[i % BALLOON.length]]);
+  K.flat.push(discBatch(dots));
+  balloonMesh(K, tied, free);
+  const span = hw + 70, cl = [];
+  for (let i = 0; i < 3; i++) cl.push([K.rnd(-span, span), K.rnd(8, 11), FZ + K.rnd(-14, 8), K.rnd(1.8, 2.6)]);
+  cloudLayer(K, cl, span, [0xffe6d8, 0xffdce8, 0xfff0e2]);
+}
+function lightPost(h) {
+  const p = [cyl(0.32, 0.4, 0.35, 0xa898c0, 0, 0, 0, 8)];
+  for (let i = 0; i < 5; i++) p.push(custom(new THREE.CylinderGeometry(0.12, 0.12, (h - 0.35) / 5, 6, 1, true).translate(0, 0.35 + ((i + 0.5) * (h - 0.35)) / 5, 0), i % 2 ? 0xff9fb8 : WHITE));
+  p.push(ballC(0.22, GOLD, 0, h + 0.15, 0, 0));
+  return p;
+}
+// A sagging wire with glowing bulbs (and pennants every other step when asked).
+function lightString(K, a, b, sag, step, pennants) {
+  const n = Math.max(2, Math.round(Math.hypot(b[0] - a[0], b[2] - a[2]) / step));
+  const at = (t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t - Math.sin(t * PI) * sag, a[2] + (b[2] - a[2]) * t];
+  let prev = a;
+  for (let i = 1; i <= 8; i++) { const p = at(i / 8); K.glossy.push(rod(prev, p, 0.035, 0.035, 0x7a6a80, 3)); prev = p; }
+  for (let i = 1; i < n; i++) {
+    const [x, y, z] = at(i / n);
+    if (pennants && i % 2) { K.glossy.push(tris([[x - 0.42, y, z], [x + 0.42, y, z], [x, y - 0.95, z + 0.12]], PENNANT[(i >> 1) % PENNANT.length], new THREE.Vector3(0, 0.3, 1))); continue; }
+    K.lit.push(custom(new THREE.OctahedronGeometry(0.17).scale(1, 1.25, 1).translate(x, y - 0.16, z), BULB[i % BULB.length]));
+    K.halos.push([x, y - 0.14, z + 0.1, 0.6, 0.6, 0.4, 0xffc27a, true]);
+  }
+}
+function fairStall(K, stripe, kind) {
+  const W = 6, D = 3.6, H = 3.2, s = [], n = 8, sw = (W + 0.6) / n;
+  s.push(box(W, 1.5, 0.9, stripe, 0, 0, D / 2 - 0.45), box(W + 0.3, 0.2, 1.2, WHITE, 0, 1.5, D / 2 - 0.45));
+  for (let i = 0; i < 6; i++) s.push(box(0.4, 1.5, 0.04, WHITE, -W / 2 + 0.5 + (i * (W - 1)) / 5, 0, D / 2 + 0.01));
+  s.push(box(W, H + 1.7, 0.3, 0xfff3ea, 0, 0, -D / 2 + 0.15));
+  for (const sx of [-1, 1]) s.push(box(0.3, H + 0.8, 0.3, WHITE, sx * (W / 2 - 0.15), 0, D / 2 - 0.15), box(0.25, H + 1.7, D - 0.3, 0xfff3ea, sx * (W / 2 - 0.12), 0, 0));
+  for (let i = 0; i < n; i++) {
+    const x = -W / 2 - 0.3 + (i + 0.5) * sw, c = i % 2 ? WHITE : stripe;
+    s.push(custom(new THREE.BoxGeometry(sw, 0.18, D + 1.0).rotateX(0.28).translate(x, H + 1.25, 0.2), c));
+    s.push(custom(new THREE.CircleGeometry(sw / 2, 8, PI, PI).translate(x, H + 0.62, 2.45), i % 2 ? stripe : WHITE));
+  }
+  s.push(box(3.0, 1.0, 0.25, WHITE, 0, H + 1.9, -D / 2 + 0.2), shapeZ(starShape(0.38), stripe, 0, H + 2.4, -D / 2 + 0.34));
+  if (kind === 0) {
+    s.push(box(W - 0.6, 0.15, 0.8, WHITE, 0, 2.3, -D / 2 + 0.7));
+    for (let i = 0; i < 4; i++) s.push(...put(plush(K.pick([0xffd6a8, 0xffc2dc, 0xc9e8ff, 0xe2d4ff])), -1.95 + i * 1.3, 2.45, -D / 2 + 0.7, 0, 0.8));
+    for (let i = 0; i < 2; i++) s.push(...put(plush(K.pick([0xfff0b0, 0xc4f0dc, 0xffc2dc])), -1.2 + i * 2.4, 0.3, -D / 2 + 0.9, 0, 0.9));
+  } else {
+    for (let r = 0; r < 3; r++) for (let i = 0; i <= 2 - r; i++) s.push(cyl(0.2, 0.22, 0.55, WHITE, (i - (2 - r) / 2) * 0.48, 1.7 + r * 0.56, D / 2 - 0.45, 8), cyl(0.21, 0.21, 0.1, 0xff8fa8, (i - (2 - r) / 2) * 0.48, 1.9 + r * 0.56, D / 2 - 0.45, 8));
+    for (let i = 0; i < 3; i++) s.push(ballC(0.22, K.pick(PENNANT), 1.6 + i * 0.5, 1.7, D / 2 - 0.4, 0));
+    for (let i = 0; i < 4; i++) s.push(...put(plush(K.pick([0xffd6a8, 0xffc2dc, 0xc9e8ff])), -2.4 + i * 1.2, 2.4, -D / 2 + 0.45, 0, 0.6));
+  }
+  return s;
+}
+function plush(col) {
+  return [egg(0.42, 0.42, 0.42, col, 0, 0.42, 0, 7, 4), egg(0.32, 0.32, 0.32, col, 0, 1.08, 0, 7, 4), ballC(0.12, col, -0.24, 1.36, 0, 0), ballC(0.12, col, 0.24, 1.36, 0, 0), ballC(0.11, 0xfff3ea, 0, 1.0, 0.28, 0)];
+}
+function popcornCart(K) {
+  const RED = 0xff8f9f, p = [box(3.2, 1.5, 1.9, RED, 0, 0.9, 0)];
+  for (let i = 0; i < 4; i++) p.push(box(0.34, 1.5, 0.04, WHITE, -1.2 + i * 0.8, 0.9, 0.96));
+  for (const sx of [-1.05, 1.05]) for (const sz of [-1.03, 1.03]) p.push(cyl(0.72, 0.72, 0.16, WHITE, sx, 0.72, sz, 14, PI / 2), cyl(0.2, 0.2, 0.2, GOLD, sx, 0.72, sz, 8, PI / 2));
+  p.push(box(3.0, 0.12, 1.7, WHITE, 0, 2.4, 0));
+  for (const sx of [-1.4, 1.4]) for (const sz of [-0.75, 0.75]) p.push(box(0.1, 1.8, 0.1, GOLD, sx, 2.5, sz));
+  p.push(box(3.1, 0.35, 1.8, RED, 0, 4.3, 0), box(3.12, 0.12, 1.82, WHITE, 0, 4.5, 0));
+  for (let i = 0; i < 30; i++) { const x = K.rnd(-1.25, 1.25); p.push(custom(new THREE.OctahedronGeometry(0.24).rotateY(K.R() * 2).translate(x, 2.7 + K.R() * 0.8 * (1 - Math.abs(x) / 1.6), K.rnd(-0.62, 0.62)), K.pick([0xfff6e0, 0xfff0c0, 0xffe9a8]))); }
+  p.push(rod([-1.6, 1.9, 0.5], [-2.4, 2.2, 0.5], 0.06, 0.06, GOLD, 5), rod([-1.6, 1.9, -0.5], [-2.4, 2.2, -0.5], 0.06, 0.06, GOLD, 5), rod([-2.4, 2.2, -0.6], [-2.4, 2.2, 0.6], 0.08, 0.08, WHITE, 6));
+  const can = cone(2.0, 0.9, WHITE, 0, 4.62, 0, 12);
+  paintTris(can, (x, y, z) => (slice(x, z, 12) % 2 ? RED : null));
+  p.push(can, ballC(0.16, GOLD, 0, 5.55, 0, 1));
+  return p;
+}
+function ticketBooth(K) {
+  const W = 0xfff3ea, P = 0xff8fb0;
+  const s = [rbox(3.2, 3.6, 3.0, W, 0, 0, 0, 0.25), box(3.3, 0.9, 3.1, P, 0, 0, 0), box(1.9, 0.14, 0.6, WHITE, 0, 1.45, 1.75), thinRing(0.86, 0.1, GOLD, 0, 2.35, 1.53, 0, 18)];
+  const roof = cone(2.6, 2.4, WHITE, 0, 3.6, 0, 12);
+  paintTris(roof, (x, y, z) => (slice(x, z, 12) % 2 ? P : null));
+  s.push(roof, ballC(0.22, GOLD, 0, 6.05, 0, 1), rod([0, 6.1, 0], [0, 7.3, 0], 0.04, 0.04, INK, 4), tris([[0, 7.3, 0], [0, 6.75, 0], [0.95, 7.0, 0]], 0xffd36e, new THREE.Vector3(0, 0, 1)));
+  s.push(box(1.5, 0.62, 0.06, 0xffe08a, 0, 0.5, 1.56), disc(0.12, P, -0.75, 0.81, 1.6, 8));
+  return { s, l: [vdisc(0.8, 0xfff0c4, 0, 2.35, 1.51, 18)] };
+}
+function duckPool(K, r) {
+  const ring = custom(new THREE.TorusGeometry(r, 0.36, 6, 32).rotateX(PI / 2).translate(0, 0.36, 0), WHITE);
+  paintTris(ring, (x, y, z) => (slice(x, z, 8) % 2 ? 0xff9fb8 : null));
+  shadeY(ring, 0, 0.72, 0.85, 1.05);
+  const p = [disc(r - 0.1, 0x7fd0f0, 0, 0.32, 0, 28), ringXZ(r * 0.4, r * 0.46, 0xaee8fa, 0, 0.33, 0, 20), ring];
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * TAU + K.R() * 0.3, d = r * K.rnd(0.3, 0.58), c = i % 3 ? 0xffe066 : K.pick([0xff9fb8, 0x8fdcc4, WHITE]);
+    p.push(...put([egg(0.8, 0.5, 0.55, c, 0, 0.32, 0, 8, 5), egg(0.36, 0.36, 0.36, c, 0.62, 0.8, 0, 7, 5), egg(0.26, 0.09, 0.15, 0xff9a2e, 0.98, 0.76, 0, 5, 3), egg(0.3, 0.2, 0.2, c, -0.72, 0.6, 0, 5, 3)], Math.cos(a) * d, 0.3, Math.sin(a) * d, K.R() * TAU, 0.42));
+  }
+  return p;
+}
+function planter(K, len) {
+  const p = [box(len, 0.8, 1.2, 0xffd6e0, 0, 0, 0), box(len + 0.2, 0.15, 1.4, WHITE, 0, 0.8, 0), box(len - 0.3, 0.05, 0.95, 0x8a6a4a, 0, 0.9, 0)];
+  for (let x = -len / 2 + 0.6; x < len / 2 - 0.4; x += 0.9) p.push(...put(flowerClump(K, 0.55, K.pick(FLOWER)), x, 0.88, 0));
+  return p;
+}
+function parkBench(col) {
+  const L = 0x7d6e8a, p = [];
+  for (let i = 0; i < 3; i++) p.push(box(3.4, 0.12, 0.3, col, 0, 0.9, -0.36 + i * 0.36));
+  for (let i = 0; i < 2; i++) p.push(box(3.4, 0.3, 0.1, col, 0, 1.25 + i * 0.42, -0.62));
+  for (const sx of [-1.4, 1.4]) p.push(box(0.14, 0.9, 1.1, L, sx, 0, -0.05), box(0.12, 1.1, 0.12, L, sx, 0.9, -0.66));
+  return p;
+}
+function bigTop(K, R) {
+  const P = 0xff9fb8, wall = cyl(R, R, 3.0, WHITE, 0, 0, 0, 24);
+  paintTris(wall, (x, y, z) => (slice(x, z, 24) % 2 ? P : null));
+  shadeY(wall, 0, 3, 0.85, 1.02);
+  const roof = lathe([[R + 0.5, 3.0], [R * 0.72, 4.3], [R * 0.3, 6.2], [0.3, 7.4], [0.01, 7.5]], WHITE, 24);
+  paintTris(roof, (x, y, z) => (slice(x, z, 24) % 2 ? P : null));
+  const p = [wall, roof, box(2.2, 2.4, 0.3, 0x8a5a6a, 0, 0, R - 0.05), ballC(0.3, GOLD, 0, 7.5, 0, 1), rod([0, 7.6, 0], [0, 9.2, 0], 0.05, 0.05, INK, 4),
+    tris([[0, 9.2, 0], [0, 8.5, 0], [1.3, 8.85, 0]], 0xffd36e, new THREE.Vector3(0, 0, 1))];
+  for (const s of [-1, 1]) p.push(tris([[s * 1.1, 2.4, R + 0.12], [s * 0.2, 2.4, R + 0.12], [s * 1.1, 0.2, R + 0.12]], P, new THREE.Vector3(0, 0, 1)));
+  for (let i = 0; i < 24; i++) { const a = ((i + 0.5) / 24) * TAU; p.push(ballC(0.26, i % 2 ? P : 0xffd36e, Math.cos(a) * (R + 0.5), 2.9, Math.sin(a) * (R + 0.5), 0)); }
+  return p;
+}
+function ferrisWheel(K, R, hubY) {
+  const frame = [], rotor = [], gond = [], ST = 0xffffff, ST2 = 0xece6f6, RIM = 0xff8fb0;
+  for (const sz of [-1, 1]) {
+    for (const sx of [-1, 1]) frame.push(rod([sx * R * 0.55, 0.4, sz * 2.3], [0, hubY, sz * 1.45], 0.26, 0.2, ST, 8));
+    frame.push(rod([-R * 0.36, hubY * 0.38, sz * 1.95], [R * 0.36, hubY * 0.38, sz * 1.95], 0.13, 0.13, ST2, 6));
+  }
+  frame.push(cyl(0.42, 0.42, 3.4, 0xffd36e, 0, hubY, 0, 12, PI / 2));
+  frame.push(rbox(R * 1.4, 0.4, 5.6, 0xf3ecf8, 0, 0, 0, 0.15), rbox(3.2, 0.25, 2.2, 0xff9fb8, 0, 0, 3.6, 0.1));
+  for (const z of [-0.95, 0.95]) {
+    rotor.push(thinRing(R, 0.17, RIM, 0, 0, z, 0, 48, 3), thinRing(R * 0.5, 0.09, 0xffd36e, 0, 0, z, 0, 20, 3));
+    for (let i = 0; i < 12; i++) { const a = (i / 12) * TAU; rotor.push(rod([0, 0, z], [Math.cos(a) * R, Math.sin(a) * R, z], 0.055, 0.055, ST, 4)); }
+  }
+  rotor.push(cyl(0.8, 0.8, 2.3, ST, 0, 0, 0, 14, PI / 2), cyl(1.05, 1.05, 0.25, 0xffd36e, 0, 0, 1.2, 16, PI / 2), cyl(1.05, 1.05, 0.25, 0xffd36e, 0, 0, -1.2, 16, PI / 2));
+  for (let i = 0; i < 32; i++) { const a = ((i + 0.5) / 32) * TAU; rotor.push(custom(new THREE.OctahedronGeometry(0.17).translate(Math.cos(a) * R, Math.sin(a) * R, 1.16), i % 2 ? 0xfff6c4 : 0xffd6e2)); }
+  const GC = [0xff9fb8, 0x8fdcc4, 0xffd36e, 0xb9a6f0, 0x8fc8ff], n = 10;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * TAU, px = Math.cos(a) * R, py = Math.sin(a) * R, c = GC[i % GC.length];
+    rotor.push(rod([px, py, -1.05], [px, py, 1.05], 0.07, 0.07, CHROME_D, 5));
+    const g = [rod([0, 0, 0], [0, -0.7, 0], 0.07, 0.07, CHROME_D, 4), dome(0.95, 0.42, 0.85, c, 0, -0.84, 0, 10, 3),
+      cyl(0.9, 0.72, 0.85, c, 0, -2.45, 0, 10), thinRing(0.9, 0.08, WHITE, 0, -1.6, 0, PI / 2, 10, 3)];
+    for (const sx of [-0.7, 0.7]) g.push(rod([sx, -1.6, 0], [sx, -0.84, 0], 0.05, 0.05, WHITE, 4));
+    if (i % 2) g.push(ballC(0.26, 0xffe0c4, -0.3, -1.25, 0.15, 0), ballC(0.24, 0xf6d0b0, 0.32, -1.3, 0.1, 0));
+    for (const gg of put(g, px, py, 0, 0, [1, 1, 0.66])) { gg.userData.piv = [px, py]; gond.push(gg); }
+  }
+  for (const g of rotor) g.setAttribute('gp', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 3), 3));
+  for (const g of gond) {
+    const k = g.attributes.position.count, a = new Float32Array(k * 3);
+    for (let i = 0; i < k; i++) a.set([g.userData.piv[0], g.userData.piv[1], 1], i * 3);
+    g.setAttribute('gp', new THREE.BufferAttribute(a, 3));
+    rotor.push(g);
+  }
+  // Gondolas counter-rotate about their pins so they always hang level.
+  const ang = { value: 0 };
+  const mat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 30, specular: 0x242424 });
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uAng = ang;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec3 gp;\nuniform float uAng;')
+      .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
+        float gC = cos(uAng * gp.z), gS = sin(uAng * gp.z);
+        mat2 gR = mat2(gC, -gS, gS, gC);
+        objectNormal.xy = gR * objectNormal.xy;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        transformed.xy = gp.xy + gR * (transformed.xy - gp.xy);`);
+  };
+  mat.customProgramCacheKey = () => 'backdrop-ferris';
+  return { frame, rotor, mat, ang };
+}
+function carousel(K, R) {
+  const base = [], rotor = [], horses = [], GD = 0xffd36e, P = 0xff9fb8;
+  base.push(cyl(R + 0.35, R + 0.5, 0.7, 0xf3ecf8, 0, 0, 0, 28), torus(R + 0.42, 0.08, GD, 0, 0.7, 0, PI / 2, 28));
+  for (let i = 0; i < 3; i++) base.push(box(2.4 - i * 0.2, 0.24, 0.6, WHITE, 0, i * 0.23, R + 1.15 - i * 0.3));
+  const deck = cyl(R, R, 0.3, 0xffe8f0, 0, 0.7, 0, 32);
+  paintTris(deck, (x, y, z) => (y > 0.99 && slice(x, z, 16) % 2 ? 0xfff8fb : null));
+  const canopy = cone(R + 0.8, 2.6, WHITE, 0, 5.4, 0, 16);
+  paintTris(canopy, (x, y, z) => (slice(x, z, 16) % 2 ? P : null));
+  shadeY(canopy, 5.4, 8, 0.9, 1.05);
+  rotor.push(deck, canopy, cyl(R + 0.82, R + 0.82, 0.55, GD, 0, 4.85, 0, 32), cyl(0.75, 0.75, 4.4, 0xfff0f5, 0, 1.0, 0, 16));
+  for (const y of [1.5, 3.0, 4.5]) rotor.push(cyl(0.79, 0.79, 0.22, GD, 0, y, 0, 16));
+  rotor.push(ballC(0.35, GD, 0, 8.05, 0, 1), rod([0, 8.3, 0], [0, 9.4, 0], 0.04, 0.04, INK, 4), tris([[0, 9.4, 0], [0, 8.9, 0], [0.9, 9.15, 0]], P, new THREE.Vector3(0, 0, 1)));
+  for (let i = 0; i < 20; i++) {
+    const a = ((i + 0.5) / 20) * TAU, cx = Math.cos(a), cz = Math.sin(a);
+    rotor.push(ballC(0.22, i % 2 ? P : WHITE, cx * (R + 0.84), 4.78, cz * (R + 0.84), 0), custom(new THREE.OctahedronGeometry(0.13).translate(cx * (R + 0.86), 5.12, cz * (R + 0.86)), 0xfff6c4));
+  }
+  const HC = [[WHITE, 0xffd36e, P], [0xffd6e4, 0xb9a6f0, 0x8fdcc4], [0xd8f2e8, P, 0xffd36e], [0xfff0c4, 0x8fc8ff, P]];
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * TAU, x = Math.cos(a) * R * 0.7, z = Math.sin(a) * R * 0.7, [b, m, sd] = HC[i % HC.length];
+    rotor.push(rod([x, 1.0, z], [x, 5.4, z], 0.07, 0.07, GD, 6));
+    horses.push(...put(horse(b, m, sd), x, 2.5 + (i % 2) * 0.4, z, PI / 2 - a).map((g) => { g.userData.ph = i * 1.7; return g; }));
+  }
+  for (const g of rotor) g.setAttribute('hb', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+  for (const g of horses) {
+    const k = g.attributes.position.count, a = new Float32Array(k * 2);
+    for (let i = 0; i < k; i++) { a[i * 2] = 1; a[i * 2 + 1] = g.userData.ph; }
+    g.setAttribute('hb', new THREE.BufferAttribute(a, 2));
+    rotor.push(g);
+  }
+  const time = { value: 0 };
+  const mat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 40, specular: 0x2a2a2a });
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = time;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 hb;\nuniform float uTime;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.y += hb.x * sin(uTime * 2.2 + hb.y) * 0.32;');
+  };
+  mat.customProgramCacheKey = () => 'backdrop-carousel';
+  return { base, rotor, mat, time };
+}
+function horse(body, mane, saddle) {
+  const p = [egg(1.0, 0.48, 0.42, body, 0, 0, 0, 9, 6), rod([0.65, 0.15, 0], [1.05, 0.9, 0], 0.27, 0.2, body, 6), egg(0.52, 0.26, 0.24, body, 1.32, 0.98, 0, 8, 5),
+    cone(0.08, 0.26, body, 1.12, 1.14, 0.12, 4), cone(0.08, 0.26, body, 1.12, 1.14, -0.12, 4),
+    egg(0.5, 0.13, 0.11, mane, 0.8, 0.8, 0, 6, 4), egg(0.38, 0.16, 0.12, mane, -1.15, 0.05, 0, 6, 4),
+    box(0.62, 0.1, 0.72, saddle, 0, 0.42, 0)];
+  for (const sz of [-0.2, 0.2]) {
+    p.push(rod([0.6, -0.2, sz], [1.05, -0.75, sz], 0.1, 0.08, body, 5), rod([1.05, -0.75, sz], [0.85, -1.15, sz], 0.08, 0.07, body, 5));
+    p.push(rod([-0.6, -0.2, sz], [-0.95, -1.05, sz], 0.1, 0.08, body, 5));
+  }
+  return p;
+}
+// Balloons: tied ones sway on their strings, free ones drift up and away (vertex shader).
+function balloonMesh(K, tied, free) {
+  const parts = [];
+  const tag = (geos, cx, cy, cz, ph, mode, wf) => {
+    for (const g of geos) {
+      const n = g.attributes.position.count, p = g.attributes.position, bc = new Float32Array(n * 4), bm = new Float32Array(n * 2);
+      for (let i = 0; i < n; i++) { bc.set([cx, cy, cz, ph], i * 4); bm[i * 2] = mode; bm[i * 2 + 1] = wf ? wf(p.getY(i)) : 1; }
+      g.setAttribute('bc', new THREE.BufferAttribute(bc, 4));
+      g.setAttribute('bm', new THREE.BufferAttribute(bm, 2));
+      parts.push(g);
+    }
+  };
+  const balloon = (col) => [egg(0.55, 0.68, 0.55, col, 0, 0, 0, 10, 7), custom(new THREE.ConeGeometry(0.12, 0.18, 6).translate(0, -0.74, 0), col), ballC(0.12, lighten(col, 0.7), -0.2, 0.3, 0.4, 0)];
+  for (const [ax, ay, az, bx, by, bz, col] of tied) {
+    const ph = K.R();
+    tag(put(balloon(col), bx, by, bz), bx, by, bz, ph, 0, null);
+    tag([rod([ax, ay, az], [bx, by - 0.82, bz], 0.022, 0.022, 0xf6f2ee, 3)], bx, by, bz, ph, 0, (y) => clamp01((y - ay) / (by - ay)));
+  }
+  for (const [x, y, z, col] of free) {
+    const ph = K.R();
+    tag([...put(balloon(col), x, y, z), rod([x, y - 0.82, z], [x + 0.1, y - 2.4, z], 0.022, 0.022, 0xf6f2ee, 3)], x, y, z, ph, 1, null);
+  }
+  const uTime = { value: 0 };
+  const mat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 70, specular: 0x555555 });
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = uTime;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec4 bc;\nattribute vec2 bm;\nuniform float uTime;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        if (bm.x < 0.5) {
+          transformed.x += sin(uTime * 1.1 + bc.w * 6.3) * 0.35 * bm.y;
+          transformed.z += cos(uTime * 0.8 + bc.w * 4.1) * 0.2 * bm.y;
+          transformed.y += sin(uTime * 1.6 + bc.w * 5.0) * 0.1 * bm.y;
+        } else {
+          float life = fract(uTime * 0.022 + bc.w);
+          float sz = smoothstep(0.0, 0.05, life) * (1.0 - smoothstep(0.8, 1.0, life));
+          transformed = bc.xyz + (transformed - bc.xyz) * sz + vec3(sin(uTime * 0.6 + bc.w * 9.0) * 1.2, life * 32.0, 0.0);
+        }`);
+  };
+  mat.customProgramCacheKey = () => 'backdrop-balloons';
+  const m = new THREE.Mesh(merge(parts), mat);
+  m.name = 'balloons'; m.frustumCulled = false;
+  K.meshes.push(m);
+  K.tick.push((t) => { uTime.value = t; });
+}
+
+// ============================================================== MOON CAMP
+function space(K) {
+  const { hw, hd, ns } = K;
+  K.shadow = 0x4a437c;
+  const M = K.matte;
+  const baseX = -(Math.max(hw * 0.42, 4.5) + 2), baseZ = -(hd + 9.5);
+  const padX = Math.max(hw * 0.5, 5) + 3, padZ = -(hd + 8.5);
+  const roverX = hw + 5.4, roverZ = hd * 0.28, dishX = -(hw + 5.2), dishZ = hd * 0.12;
+  const bX = baseX - 6.6, bZ = baseZ + 3.6, gX = baseX + 6.0, gZ = baseZ + 2.4;
+  K.claim(baseX, baseZ, 6); K.claim(bX, bZ, 3.6); K.claim(gX, gZ, 3.4); K.claim(padX + 1.2, padZ, 5.5);
+  K.claim(roverX, roverZ, 3.4); K.claim(dishX, dishZ, 2.8); K.claim(hw + 6, -hd * 0.5, 4.2);
+
+  // Moon dust: soft patches and specks, craters with a raised rim and a sunlit inner edge.
+  const dots = [];
+  for (let i = 0; i < 44; i++) {
+    const [x, z] = K.around(2.6, 28, 16), r = K.rnd(1.6, 4.2);
+    dots.push([x, 0.01 + (i % 4) * 0.01, z, r, K.pick([0xa6a0cf, 0x958fc1, 0xb0abd8, 0x9e98c9]), 18, 1, K.rnd(0.6, 1), K.R() * PI]);
+  }
+  for (let i = 0; i < 220; i++) { const [x, z] = K.around(1.8, 26, 16); dots.push([x, 0.06, z, K.rnd(0.06, 0.13), K.pick([0xd4d0ee, 0x8780b4, 0xc8c3e8]), 5]); }
+  const crater = (x, z, r) => {
+    if (!K.free(x, z, r + 0.4)) return;
+    K.claim(x, z, r + 0.4);
+    dots.push([x, 0.035, z, r * 0.92, 0x8a84b6, 18], [x + r * 0.1, 0.04, z + r * 0.1, r * 0.62, 0x837dae, 14]);
+    M.push(custom(new THREE.TorusGeometry(r, r * 0.17, 4, 22).rotateX(PI / 2).scale(1, 0.55, 1).translate(x, 0, z), 0xbab5dc));
+    K.flat.push(custom(new THREE.RingGeometry(r * 0.66, r * 0.86, 14, 1, PI * 0.45, PI * 0.6).rotateX(-PI / 2).translate(x, 0.045, z), 0xc6c1e6));
+  };
+  crater(hw * 0.12, hd + 5.4 * ns, 1.3);
+  for (let i = 0; i < 16; i++) { const r = K.rnd(1.2, 3.0), [x, z] = K.around(r + 1.8, 24, 14); crater(x, z, r); }
+  for (let i = 0; i < 34; i++) {
+    const r = K.rnd(0.25, 0.9), [x, z] = K.around(r + 1.6, 24, 14);
+    if (!K.free(x, z, r)) continue;
+    const g = custom(new THREE.IcosahedronGeometry(r, 0).scale(1, K.rnd(0.5, 0.75), K.rnd(0.8, 1.1)).rotateY(K.R() * TAU).translate(x, r * 0.25, z), K.pick([0x8f89b9, 0xa29dcb, 0x8580b0]));
+    M.push(jitter(g, K.R, 0.18));
+    K.blob(x, 0.02, z, r * 1.3, r * 1.1, 0.3);
+  }
+
+  // Landing lights frame the board; rover tracks and boot prints cross the near side.
+  const ML = [0x9ff0d8, 0xffb8dc, 0xfff0a0], mx = hw + 1.7, mz = hd + 1.7;
+  let mi = 0;
+  for (const [ax, az, bx, bz] of [[-mx, mz, mx, mz], [mx, mz, mx, -mz], [mx, -mz, -mx, -mz], [-mx, -mz, -mx, mz]]) {
+    const n = Math.round(Math.hypot(bx - ax, bz - az) / 2.6);
+    for (let i = 0; i < n; i++) {
+      const t = i / n, x = ax + (bx - ax) * t, z = az + (bz - az) * t, c = ML[mi++ % 3];
+      K.add({ s: [cyl(0.26, 0.3, 0.1, 0xcfcae8, 0, 0, 0, 10)], l: [dome(0.2, 0.18, 0.2, c, 0, 0.1, 0, 10, 3)] }, x, 0, z);
+      K.halos.push([x, 0.06, z, 0.75, 0.75, 0.26, c, false]);
+    }
+  }
+  const trk = new THREE.CatmullRomCurve3([[roverX - 0.3, roverZ + 3.0], [hw + 3.4, hd + 3.4], [hw * 0.35, hd + 3.8 + 0.8 * ns], [-hw * 0.3, hd + 5.8 * ns], [-hw * 0.55, hd + 11], [-hw * 0.4, hd + 28]].map(([x, z]) => new THREE.Vector3(x, 0, z))).getSpacedPoints(70).map((v) => [v.x, v.z]);
+  for (const off of [-0.85, 0.85]) {
+    const tp = trk.map(([x, z], i) => { const [xn, zn] = trk[Math.min(trk.length - 1, i + 1)], [xp, zp] = trk[Math.max(0, i - 1)], n = norm2(xn - xp, zn - zp); return [x - n[1] * off, z + n[0] * off, Math.atan2(n[1], n[0])]; });
+    K.flat.push(...groundRibbon(tp, 0.5, 0x8d87b9, 0.045));
+    for (let i = 0; i < tp.length; i += 1) dots.push([tp[i][0], 0.05, tp[i][1], 0.2, 0x7f79ab, 4, 1.3, 0.45, -tp[i][2]]);
+  }
+  const bp = new THREE.CatmullRomCurve3([[baseX + 4.0, baseZ + 4.6], [-(hw + 2.6), -hd * 0.5], [-(hw + 2.4), hd * 0.4], [-(hw + 1.9), hd + 2.6], [-hw * 0.62, hd + 3.4 + 0.6 * ns]].map(([x, z]) => new THREE.Vector3(x, 0, z))).getSpacedPoints(80).map((v) => [v.x, v.z]);
+  for (let i = 1; i < bp.length - 4; i += 1) {
+    const [x, z] = bp[i], [xn, zn] = bp[i + 1], a = Math.atan2(zn - z, xn - x), sd = i % 2 ? 1 : -1;
+    dots.push([x - Math.sin(a) * 0.26 * sd, 0.055, z + Math.cos(a) * 0.26 * sd, 0.17, 0x8780b4, 7, 1, 1.6, -a + PI / 2]);
+  }
+
+  // Near side (low): a patch of glowing crystals, a camp flag.
+  const crys = (x, z, n, s) => {
+    K.add({ l: crystals(K, n, s) }, x, 0, z, K.R() * TAU);
+    K.halos.push([x, 0.06, z, 1.9 * s, 1.7 * s, 0.22, 0xd8b8ff, false], [x, 0.8 * s, z + 0.5, 1.3 * s, 1.0 * s, 0.18, 0xffc8f0, true]);
+    K.blob(x, 0.02, z, 1.0 * s, 0.9 * s, 0.25);
+  };
+  crys(-hw * 0.66, hd + 3.4 + 0.6 * ns, 5, ns);
+  crys(hw * 0.5, hd + 10.5, 4, 1.1);
+  crys(-hw * 0.15, hd + 15, 3, 0.9);
+  K.add(moonFlag(0x8fdcc4, 0xffe27a), hw * 0.62, 0, hd + 5.8, -0.3);
+  K.blob(hw * 0.62, 0.02, hd + 5.8, 0.5, 0.5, 0.35);
+
+  // Sides: the parked rover, a dish antenna, solar panels, more crystals, flags.
+  const rv = rover(K);
+  K.add(rv, roverX, 0, roverZ, PI / 2);
+  K.blob(roverX, 0.02, roverZ, 1.9, 2.9, 0.42);
+  for (const [lx, ly, lz] of rv.lights) { const [x, z] = turn(lx, lz, PI / 2); K.halos.push([roverX + x, ly, roverZ + z + 0.3, 0.8, 0.8, 0.5, 0xfff0b8, true]); }
+  K.halos.push([roverX, 0.05, roverZ - 4.2, 1.5, 2.4, 0.22, 0xfff0b8, false]);
+  const da = dishAntenna(K);
+  K.add(da, dishX, 0, dishZ, 0.5);
+  K.blob(dishX, 0.02, dishZ, 1.9, 1.9, 0.4);
+  const [dbx, dbz] = turn(da.beacon[0], da.beacon[2], 0.5);
+  K.halos.push([dishX + dbx, da.beacon[1], dishZ + dbz + 0.3, 0.9, 0.9, 0.55, 0xff9fc8, true]);
+  K.add(solarPanels(3), hw + 6, 0, -hd * 0.5);
+  K.blob(hw + 6, 0.02, -hd * 0.5, 1.8, 4.6, 0.3);
+  crys(-(hw + 3.6), -hd * 0.62, 5, 1.1);
+  crys(hw + 3.4, hd * 0.8, 4, 0.9);
+  crys(-(hw + 6.5), hd * 0.62, 4, 1.0);
+  K.add(moonFlag(0xffb8dc, WHITE), -(hw + 3.2), 0, hd + 3.0, 0.4);
+  K.blob(-(hw + 3.2), 0.02, hd + 3.0, 0.5, 0.5, 0.35);
+
+  // Far: the moon base (two domes, a glass garden dome, tubes), the rocket on its pad.
+  const A = moonDome(K, 4.2, 0xf3f0fb, 2, true), B = moonDome(K, 2.8, 0xe8f2ff, 1, false);
+  K.add(A, baseX, 0, baseZ); K.add(B, bX, 0, bZ);
+  for (const [d, x, z] of [[A, baseX, baseZ], [B, bX, bZ]]) for (const h of d.halo) K.halos.push([h[0] + x, h[1], h[2] + z, ...h.slice(3)]);
+  K.blob(baseX + 0.4, 0.02, baseZ + 0.4, 5.4, 5.0, 0.42); K.blob(bX + 0.3, 0.02, bZ + 0.3, 3.7, 3.4, 0.42);
+  K.add(moonGarden(K, 2.6), gX, 0, gZ);
+  K.blob(gX + 0.3, 0.02, gZ + 0.3, 3.4, 3.2, 0.4);
+  const tube = (ax, az, ra, bx, bz, rb) => {
+    const [dx, dz] = norm2(bx - ax, bz - az), a = [ax + dx * (ra - 0.5), 1.1, az + dz * (ra - 0.5)], b = [bx - dx * (rb - 0.5), 1.1, bz - dz * (rb - 0.5)];
+    K.glossy.push(rod(a, b, 0.72, 0.72, 0xd9d5ee, 12));
+    for (const t of [0.2, 0.5, 0.8]) { const c = [a[0] + (b[0] - a[0]) * t, 1.1, a[2] + (b[2] - a[2]) * t]; K.glossy.push(rod(c, [c[0] + dx * 0.3, 1.1, c[2] + dz * 0.3], 0.82, 0.82, 0xbcb6de, 12)); }
+    K.blob((a[0] + b[0]) / 2, 0.02, (a[2] + b[2]) / 2, Math.abs(b[0] - a[0]) / 2 + 0.8, Math.abs(b[2] - a[2]) / 2 + 0.8, 0.3);
+  };
+  tube(baseX, baseZ, 4.2, bX, bZ, 2.8); tube(baseX, baseZ, 4.2, gX, gZ, 2.6);
+  const rk = rocket(K);
+  K.add(rk, padX, 0, padZ);
+  K.halos.push([padX, 7.2, padZ + 2.0, 1.2, 1.2, 0.5, 0xffc87a, true]);
+  K.add(gantry(K, 11.5), padX + 3.5, 0, padZ - 0.3);
+  K.halos.push([padX + 3.5, 12.1, padZ + 0.3, 1.0, 1.0, 0.55, 0xff9fc8, true]);
+  K.blob(padX + 0.8, 0.02, padZ + 0.4, 5.2, 4.4, 0.42);
+
+  // Beyond: rounded moon hills, a ringed planet rising behind them, a crescent world,
+  // a satellite drifting by, and twinkling stars (never over the board).
+  const hill = (x, z, rx, ry, rz) => { const h = dome(rx, ry, rz, K.pick([0xa59fcf, 0x9690c3, 0xb0aad6]), x, -0.3, z, 18, 6); shadeY(h, 0, ry, 0.8, 1.06); M.push(jitter(h, K.R, 0.05)); };
+  const PLX = hw * 0.12, PLZ = -(hd + 22), PLY = 3.4, PLR = 4.4;
+  hill(PLX - 2, PLZ + 6.5, 10, 3.0, 4.5);
+  for (let i = 0; i < 12; i++) { const rz = K.rnd(5, 9); hill(K.rnd(-(hw + 50), hw + 50), -(hd + 16) - rz - K.rnd(0, 16), K.rnd(8, 16), K.rnd(2.5, 5.5), rz); }
+  for (const s of [-1, 1]) for (let i = 0; i < 3; i++) hill(s * (hw + K.rnd(26, 40)), K.rnd(-hd, hd + 10), K.rnd(9, 14), K.rnd(3, 6), K.rnd(9, 13));
+  const planet = custom(new THREE.SphereGeometry(PLR, 28, 16), 0xffc9b0);
+  const PB = [0xffc9b0, 0xffdcc4, 0xf6b4b8, 0xffe8d0, 0xf2c0d8, 0xffd2b8, 0xf6b4b8, 0xffe0c8, 0xffc9b0];
+  // Bands follow the sphere's 16 latitude strips so their edges stay clean.
+  paintTris(planet, (x, y) => PB[Math.floor((Math.min(15, Math.floor((Math.asin(Math.max(-1, Math.min(1, y / PLR))) / PI + 0.5) * 16)) * 9) / 16)]);
+  recolor(planet, (x, y, z, c) => c.multiplyScalar(0.7 + 0.36 * clamp01((x * 0.7 + z * 0.5 + y * 0.3) / PLR * 0.5 + 0.55)));
+  const ring = custom(new THREE.RingGeometry(PLR * 1.35, PLR * 2.0, 48, 3).rotateX(-PI / 2), 0xfff0e0);
+  paintTris(ring, (x, y, z) => { const d = Math.hypot(x, z) / PLR; return d < 1.55 ? 0xfff0dc : d < 1.75 ? 0xe8d4f6 : 0xffd6e4; });
+  K.add({ m: put([planet, ...twoSided([ring])], 0, 0, 0, 0.4, 1, 0.32, 0.18) }, PLX, PLY, PLZ);
+  const ex = -(hw + 4), ey = 6.2, ez = -(hd + 15), ER = 2.0;
+  const earth = custom(new THREE.SphereGeometry(ER, 20, 12), 0x7fc8f0);
+  paintTris(earth, (x, y, z) => (Math.sin(x * 2.1 + 1) * Math.sin(y * 2.4) * Math.sin(z * 1.7 + 0.5) > 0.12 ? 0x8fdc9a : null));
+  const night = new THREE.Color(0x4a4a8a);
+  recolor(earth, (x, y, z, c) => c.lerp(night, 1 - smooth(-0.05, 0.7, (x * 0.85 + y * 0.35) / ER)));
+  K.add({ m: [earth] }, ex, ey, ez);
+  K.halos.push([ex, ey, ez + 2.2, 3.2, 3.2, 0.22, 0x8fd0ff, true]);
+  const sat = new THREE.Mesh(merge(satellite()), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 60, specular: 0x444444 }));
+  const stx = -hw * 0.18, sty = 8.4, stz = -(hd + 12.5);
+  sat.name = 'satellite'; sat.position.set(stx, sty, stz); sat.rotation.z = 0.35;
+  K.meshes.push(sat);
+  K.tick.push((t) => { sat.rotation.y = t * 0.35; sat.position.set(stx + Math.sin(t * 0.12) * 3.0, sty + Math.sin(t * 0.7) * 0.25, stz + Math.cos(t * 0.12) * 1.2); });
+  K.flat.push(discBatch(dots));
+  starfield(K, hw, hd, 320);
+}
+function crystals(K, n, s) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const h = K.rnd(0.9, 1.8) * s, a = K.R() * TAU, d = i ? K.rnd(0.35, 0.75) * s : 0, col = K.pick([0xffb3e0, 0xa8f0e0, 0xd2b8ff, 0xfff0a8]);
+    const g = custom(new THREE.OctahedronGeometry(0.4 * s, 0).scale(1, h / (0.8 * s), 1).translate(0, h * 0.5, 0), col);
+    recolor(g, (x, y, z, c) => c.multiplyScalar(0.72 + 0.28 * clamp01(y / h)).lerp(new THREE.Color(0xffffff), clamp01(y / h - 0.6) * 0.6));
+    out.push(...put([g], Math.cos(a) * d, -0.05, Math.sin(a) * d, K.R() * TAU, 1, K.rnd(-0.3, 0.3), K.rnd(-0.3, 0.3)));
+  }
+  return out;
+}
+function moonFlag(col, star) {
+  return [cyl(0.07, 0.07, 3.2, CHROME, 0, 0, 0, 6), ballC(0.12, GOLD, 0, 3.3, 0, 0), ...twoSided([panel(1.7, 1.05, col, 0.87, 2.05, 0)]), shapeZ(starShape(0.32), star, 0.87, 2.58, 0.012)];
+}
+function moonDome(K, r, col, nWin, mast) {
+  const s = [cyl(r + 0.3, r + 0.45, 0.55, 0xbcb6de, 0, 0, 0, 24)], l = [], halo = [], line = darken(col, 0.86);
+  const d = dome(r, r * 0.9, r, col, 0, 0.5, 0, 24, 8);
+  shadeY(d, 0.5, r, 0.84, 1.05);
+  s.push(d);
+  for (const lat of [0.42, 0.9]) s.push(torus(r * Math.cos(lat) + 0.02, 0.07, line, 0, 0.5 + r * 0.9 * Math.sin(lat), 0, PI / 2, 24));
+  for (let k = 0; k < 4; k++) s.push(custom(new THREE.TorusGeometry(1, 0.06 / r, 3, 20, PI).scale(r + 0.02, r * 0.9 + 0.02, r + 0.02).rotateY(k * PI / 4).translate(0, 0.5, 0), line));
+  for (let i = 0; i < nWin; i++) {
+    const a = -0.25 + (i - (nWin - 1) / 2) * 0.62, lat = 0.38, cl = Math.cos(lat);
+    const x = Math.sin(a) * r * cl * 1.01, y = 0.5 + r * 0.9 * Math.sin(lat), z = Math.cos(a) * r * cl * 1.01;
+    l.push(...put([vdisc(0.55, 0xffe6a8, 0, 0, 0, 16)], x, y, z, a, 1, -lat));
+    s.push(...put([torus(0.6, 0.11, 0xd7d2ee, 0, 0, 0.02, 0, 16)], x, y, z, a, 1, -lat));
+    halo.push([x, y, z + 0.4, 1.3, 1.1, 0.5, 0xffc87a, true]);
+  }
+  const da = 1.1, door = [rbox(1.8, 2.3, 1.8, col, 0, 0.3, 0, 0.3), box(1.1, 1.75, 0.06, 0xff9fb8, 0, 0.45, 0.91), ballC(0.08, GOLD, 0.35, 1.3, 0.96, 0)];
+  const dl = [vdisc(0.22, 0xffe6a8, 0, 1.75, 0.95, 12)];
+  s.push(...put(door, Math.sin(da) * (r - 0.2), 0, Math.cos(da) * (r - 0.2), da));
+  l.push(...put(dl, Math.sin(da) * (r - 0.2), 0, Math.cos(da) * (r - 0.2), da));
+  if (mast) {
+    s.push(rod([0, 0.5 + r * 0.9, 0], [0, 0.5 + r * 0.9 + 3.0, 0], 0.07, 0.05, CHROME_D, 5), rod([-0.6, 0.5 + r * 0.9 + 2.2, 0], [0.6, 0.5 + r * 0.9 + 2.2, 0], 0.04, 0.04, CHROME_D, 4));
+    l.push(ballC(0.18, 0xff9fc8, 0, 0.5 + r * 0.9 + 3.15, 0, 1));
+    halo.push([0, 0.5 + r * 0.9 + 3.15, 0.3, 0.9, 0.9, 0.55, 0xff9fc8, true]);
+  }
+  return { s, l, halo };
+}
+function moonGarden(K, r) {
+  const s = [cyl(r + 0.2, r + 0.35, 0.5, 0xbcb6de, 0, 0, 0, 22), disc(r, 0x9a7a6a, 0, 0.52, 0, 22)];
+  for (let i = 0; i < 6; i++) { const a = (i / 6) * TAU + K.R(), d = r * K.rnd(0.35, 0.6); s.push(...put(bush(K, K.rnd(0.42, 0.62), K.pick([0x7fcf8a, 0x8fd87a, 0x6cc46b])), Math.cos(a) * d, 0.5, Math.sin(a) * d)); }
+  s.push(...put(bush(K, 0.85, 0x7fcf8a), 0, 0.5, 0));
+  for (let i = 0; i < 7; i++) { const a = K.R() * TAU, d = r * K.rnd(0.1, 0.6); s.push(disc(0.16, K.pick([0xff9fc8, 0xffe27a, WHITE]), Math.cos(a) * d, 1.7 + K.rnd(-0.3, 0.2), Math.sin(a) * d, 7)); }
+  for (let k = 0; k < 3; k++) s.push(custom(new THREE.TorusGeometry(1, 0.05 / r, 3, 18, PI).scale(r + 0.02, r * 0.92 + 0.02, r + 0.02).rotateY(k * PI / 3).translate(0, 0.5, 0), WHITE));
+  return { s, g: [dome(r, r * 0.92, r, 0xe8f6ff, 0, 0.5, 0, 22, 8)] };
+}
+function rocket(K) {
+  const s = [], l = [];
+  const pad = cyl(3.4, 3.7, 0.7, 0xcac5e6, 0, 0, 0, 24);
+  paintTris(pad, (x, y, z) => (y > 0.69 && slice(x, z, 12) % 2 ? 0xffe27a : null));
+  s.push(pad, torus(3.45, 0.1, 0xfff6ea, 0, 0.7, 0, PI / 2, 24));
+  const body = lathe([[0.01, 0], [1.2, 0.05], [1.45, 0.7], [1.55, 2.5], [1.55, 6.6], [1.38, 8.2], [1.0, 9.6], [0.5, 10.6], [0.01, 11.1]], 0xfff6ea, 22, 0, 1.3, 0);
+  paintTris(body, (x, y) => (y > 9.9 ? 0xff9f9f : y > 5.2 && y < 5.9 ? 0x8fdcc4 : y > 2.0 && y < 2.4 ? 0xff9f9f : null));
+  shadeY(body, 1.3, 12.4, 0.86, 1.05);
+  s.push(body, lathe([[1.0, 0], [0.75, 0.4], [0.6, 0.6]], CHROME_D, 14, 0, 0.7, 0), ballC(0.14, GOLD, 0, 12.45, 0, 1));
+  const fin = new THREE.Shape(); fin.moveTo(1.35, 1.5); fin.lineTo(2.9, 0.7); fin.lineTo(2.9, 1.6); fin.lineTo(1.5, 4.2); fin.lineTo(1.35, 1.5);
+  for (let i = 0; i < 4; i++) s.push(custom(new THREE.ExtrudeGeometry(fin, { depth: 0.32, bevelEnabled: true, bevelSize: 0.06, bevelThickness: 0.06, bevelSegments: 1 }).translate(0, 0, -0.16).rotateY(i * PI / 2 + PI / 4), 0xff9f9f));
+  s.push(torus(0.62, 0.13, CHROME, 0, 7.2, 1.5, 0, 18), shapeZ(starShape(0.36), 0xffd36e, 0, 4.0, 1.57));
+  l.push(vdisc(0.56, 0xfff0b8, 0, 7.2, 1.52, 18));
+  return { s, l };
+}
+function gantry(K, H) {
+  const C = 0xffb3c4, W = 0xfff6ea, s = [];
+  for (const sx of [-0.9, 0.9]) for (const sz of [-0.9, 0.9]) s.push(box(0.22, H, 0.22, C, sx, 0, sz));
+  for (let y = 1.5; y < H - 0.5; y += 1.8) {
+    s.push(box(2.0, 0.16, 0.16, W, 0, y, 0.9), box(2.0, 0.16, 0.16, W, 0, y, -0.9), box(0.16, 0.16, 2.0, W, 0.9, y, 0), box(0.16, 0.16, 2.0, W, -0.9, y, 0));
+    s.push(rod([-0.9, y, 0.95], [0.9, Math.min(H, y + 1.8), 0.95], 0.06, 0.06, W, 4));
+  }
+  s.push(box(2.4, 0.2, 2.4, C, 0, H, 0), box(1.1, 0.3, 0.5, W, -1.45, H * 0.62, 0), rod([0, H + 0.2, 0], [0, H + 0.6, 0], 0.05, 0.05, CHROME_D, 4));
+  return { s, l: [ballC(0.18, 0xff9fc8, 0, H + 0.6, 0, 1)] };
+}
+function rover(K) {
+  const CR = 0xfff6ea, B = 0x9fdcc6, WH = 0x7d77a8;
+  const s = [rbox(4.4, 0.7, 2.3, CR, 0, 1.0, 0, 0.3), rbox(1.9, 1.0, 1.9, B, 0.9, 1.6, 0, 0.35), box(0.06, 0.7, 1.5, 0x9fd0f4, 1.86, 1.8, 0),
+    rbox(0.9, 1.0, 1.4, 0xff9fb8, -0.85, 1.65, 0, 0.25), box(0.6, 0.6, 1.8, 0xffd36e, -1.9, 1.65, 0)];
+  for (const x of [-1.5, 0, 1.5]) for (const z of [-1.35, 1.35]) s.push(cyl(0.6, 0.6, 0.45, WH, x, 0.6, z, 14, PI / 2), cyl(0.26, 0.26, 0.5, CHROME, x, 0.6, z, 8, PI / 2));
+  s.push(rod([-1.7, 2.2, 0.7], [-2.0, 4.2, 0.9], 0.05, 0.04, CHROME_D, 4), ballC(0.2, 0xffd36e, -2.0, 4.2, 0.9, 1));
+  s.push(...put(twoSided([lathe([[0.05, 0], [0.4, 0.1], [0.65, 0.3]], WHITE, 12)]), -1.5, 2.45, -0.6, 0, 1, 0.6), rod([-1.5, 2.25, -0.6], [-1.5, 2.5, -0.6], 0.05, 0.05, CHROME_D, 4));
+  const lights = [[2.25, 1.35, 0.7], [2.25, 1.35, -0.7]];
+  return { s, l: lights.map(([x, y, z]) => ballC(0.2, 0xfff6c8, x, y, z, 1)), lights };
+}
+function dishAntenna(K) {
+  const W = 0xfff6ea, s = [];
+  for (let i = 0; i < 3; i++) { const a = (i / 3) * TAU; s.push(rod([0, 2.2, 0], [Math.cos(a) * 1.5, 0, Math.sin(a) * 1.5], 0.1, 0.08, CHROME_D, 5)); }
+  s.push(cyl(0.3, 0.32, 0.9, W, 0, 1.9, 0, 10));
+  const tilt = 0.75, dish = twoSided([lathe([[0.05, 0], [0.9, 0.1], [1.7, 0.42], [2.35, 0.92], [2.45, 1.02]], 0xe2ddf2, 22)]);
+  recolor(dish, (x, y, z, c) => c.multiplyScalar(0.82 + 0.18 * clamp01(Math.hypot(x, z) / 2.4)));
+  const ribs = [0.9, 1.7].map((r, i) => thinRing(r, 0.05, 0xb9b2dc, 0, [0.1, 0.42][i] + 0.04, 0, PI / 2, 20, 3));
+  for (let k = 0; k < 3; k++) { const a = (k / 3) * TAU; ribs.push(rod([Math.cos(a) * 2.3, 0.95, Math.sin(a) * 2.3], [0, 1.7, 0], 0.04, 0.04, CHROME_D, 3)); }
+  s.push(...put([...dish, ...ribs, rod([0, 0, 0], [0, 1.7, 0], 0.06, 0.06, CHROME_D, 4), torus(2.45, 0.08, 0xffb3c4, 0, 1.02, 0, PI / 2, 24)], 0, 2.7, 0, 0, 0.85, tilt));
+  const by = 2.7 + 1.82 * 0.85 * Math.cos(tilt), bz = 1.82 * 0.85 * Math.sin(tilt);
+  return { s, l: [ballC(0.2, 0xff9fc8, 0, by, bz, 1)], beacon: [0, by, bz] };
+}
+function solarPanels(n) {
+  const p = [];
+  for (let i = 0; i < n; i++) {
+    const z = (i - (n - 1) / 2) * 3.0, pan = [box(2.4, 0.08, 2.6, 0x7f9fe8, 0, 0, 0)];
+    p.push(rod([0, 0, z], [0, 1.6, z], 0.1, 0.1, CHROME_D, 6));
+    for (let k = 1; k < 4; k++) pan.push(box(0.04, 0.02, 2.6, 0xd8e4ff, -1.2 + k * 0.6, 0.08, 0), box(2.4, 0.02, 0.04, 0xd8e4ff, 0, 0.08, -1.3 + k * 0.65));
+    p.push(...put(pan, 0, 1.7, z, 0, 1, 0, 0.5));
+  }
+  return p;
+}
+function satellite() {
+  const p = [rbox(1.3, 1.3, 1.3, 0xffd98a, 0, -0.65, 0, 0.2), cyl(0.5, 0.5, 0.25, 0xfff6ea, 0, 0.65, 0, 12)];
+  for (const s of [-1, 1]) {
+    p.push(rod([s * 0.65, 0, 0], [s * 1.3, 0, 0], 0.07, 0.07, CHROME, 4));
+    const pan = [box(2.6, 0.08, 1.3, 0x86a8f0, 0, -0.04, 0), box(2.6, 0.02, 0.04, 0xe2ebff, 0, 0.04, 0)];
+    for (let k = 1; k < 4; k++) pan.push(box(0.04, 0.02, 1.3, 0xe2ebff, -1.3 + k * 0.65, 0.04, 0));
+    p.push(...put(pan, s * 2.65, 0, 0));
+  }
+  p.push(...twoSided([lathe([[0.05, 0], [0.5, 0.12], [0.8, 0.35]], WHITE, 14, 0, 0.9, 0)]), rod([0, 0.9, 0], [0, 1.6, 0], 0.04, 0.04, CHROME, 4), ballC(0.1, 0xff9fb8, 0, 1.65, 0, 0));
+  return p;
+}
+// Twinkling stars as points, only outside the board (far side and wide sides).
+function starfield(K, hw, hd, n) {
+  const pos = new Float32Array(n * 3), col = new Float32Array(n * 3), ph = new Float32Array(n);
+  const SC = [0xfff6c8, 0xffffff, 0xffe0f0, 0xfff0a0];
+  for (let i = 0; i < n; i++) {
+    let x, y, z;
+    // Mostly low and far: the top-down camera only sees a band of 'sky' just above the horizon.
+    if (K.R() < 0.65) { x = K.rnd(-(hw + 40), hw + 40); z = -(hd + K.rnd(7, 40)); y = K.rnd(2.5, 13); }
+    else { x = (K.R() < 0.5 ? -1 : 1) * (hw + K.rnd(8, 32)); z = K.rnd(-(hd + 4), hd + 12); y = K.rnd(3, 11); }
+    pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = z;
+    _c.set(K.pick(SC)); col[i * 3] = _c.r; col[i * 3 + 1] = _c.g; col[i * 3 + 2] = _c.b;
+    ph[i] = K.R();
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setAttribute('ph', new THREE.BufferAttribute(ph, 1));
+  const tex = canvasTex(64, (x, s) => {
+    const gr = x.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+    gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.18, 'rgba(255,255,255,0.95)'); gr.addColorStop(0.45, 'rgba(255,240,255,0.25)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = gr; x.fillRect(0, 0, s, s);
+    x.fillStyle = 'rgba(255,255,255,0.7)'; x.fillRect(s / 2 - 1, 6, 2, s - 12); x.fillRect(6, s / 2 - 1, s - 12, 2);
+  });
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  const uTime = { value: 0 };
+  const mat = new THREE.PointsMaterial({ size: 2.0, map: tex, transparent: true, depthWrite: false, vertexColors: true });
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = uTime;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float ph;\nuniform float uTime;')
+      .replace('#include <fog_vertex>', '#include <fog_vertex>\ngl_PointSize *= 0.6 + 0.4 * sin(uTime * (1.2 + ph * 2.0) + ph * 40.0);');
+  };
+  mat.customProgramCacheKey = () => 'backdrop-stars';
+  const m = new THREE.Points(g, mat);
+  m.name = 'stars'; m.frustumCulled = false;
+  K.meshes.push(m);
+  K.tick.push((t) => { uTime.value = t; });
+}
+
 // ============================================================== entry
-const BUILDERS = { bakery, kitchen, playroom, picnic, garden, beach, candy, farm, snow };
+const BUILDERS = { bakery, kitchen, playroom, picnic, garden, beach, candy, farm, snow, craft, fair, space };
 
 export function buildBackdrop(worldKey, arena, root) {
   const build = BUILDERS[worldKey];

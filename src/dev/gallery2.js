@@ -11,7 +11,10 @@
 //                                       replace never matches, so the tint colors every part);
 //                                       default is the intended TINT-parts-only look
 import '../game/props_cozy.js';
-import { WAVE2_WORLDS } from '../game/props_wave2.js';
+import { WAVE2_WORLDS as W2 } from '../game/props_wave2.js';
+import { WAVE3_WORLDS } from '../game/props_wave3.js';
+// ?s=3 (or a Season 3 world) shows the Season 3 pack
+const WAVE2_WORLDS = new URLSearchParams(location.search).get('s') === '3' ? WAVE3_WORLDS : { ...W2, ...WAVE3_WORLDS };
 import * as THREE from 'three';
 import { PROPS, buildGeometry, colliderHalfHeight } from '../game/props.js';
 import { patchProps } from '../engine/render.js';

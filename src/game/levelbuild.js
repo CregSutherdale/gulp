@@ -166,6 +166,62 @@ Object.assign(WORLDS, {
   },
 });
 
+// Filled rounded rectangle (no ctx.roundRect: older iPhone Safari lacks it).
+function rrect(x, l, t, w, h, r) {
+  x.beginPath(); x.moveTo(l + r, t); x.arcTo(l + w, t, l + w, t + h, r); x.arcTo(l + w, t + h, l, t + h, r);
+  x.arcTo(l, t + h, l, t, r); x.arcTo(l, t, l + w, t, r); x.closePath(); x.fill();
+}
+// ---- Season 3 worlds
+Object.assign(WORLDS, {
+  craft: {
+    // A sage-green cutting mat on a craft table: buttons, yarn and spools pop on it.
+    label: 'Craft Corner', sky: 0xfff0e2, hemiSky: 0xfff8f0, hemiGround: 0xd9c3a8, surround: 0xd7a46e, wall: 0xffd45e, accent: '#ff7a59',
+    tile: 4, floor: (x, w, h) => {
+      x.fillStyle = '#a9d9bd'; x.fillRect(0, 0, w, h);
+      noise(x, w, h, 6);
+      // fine grid, a bolder line every 4 cells, and ruler ticks along one edge
+      x.strokeStyle = 'rgba(255,255,255,.45)'; x.lineWidth = 1;
+      for (let i = 0; i <= w; i += w / 8) { x.beginPath(); x.moveTo(i + 0.5, 0); x.lineTo(i + 0.5, h); x.stroke(); x.beginPath(); x.moveTo(0, i + 0.5); x.lineTo(w, i + 0.5); x.stroke(); }
+      x.strokeStyle = 'rgba(255,255,255,.75)'; x.lineWidth = 2.5;
+      x.beginPath(); x.moveTo(1, 0); x.lineTo(1, h); x.moveTo(0, 1); x.lineTo(w, 1); x.stroke();
+      x.fillStyle = 'rgba(255,255,255,.7)';
+      for (let i = 0; i < 16; i++) x.fillRect(i * w / 16, h - (i % 2 ? 6 : 12), 2, i % 2 ? 6 : 12);
+    },
+  },
+  fair: {
+    // Lilac fairground cobbles in the late-afternoon sun: balloons and prizes pop on them.
+    label: 'Fun Fair', sky: 0xffe2d4, hemiSky: 0xfff3ec, hemiGround: 0xd8c6e4, surround: 0x8fcf73, wall: 0xff6f91, accent: '#ff5d8f',
+    tile: 3, floor: (x, w, h) => {
+      x.fillStyle = '#bcaed6'; x.fillRect(0, 0, w, h);
+      const n = 4, s = w / n;
+      for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+        const ox = (j % 2) * s / 2;
+        x.fillStyle = ['#d8cdea', '#d0c3e5', '#ddd3ee', '#cbbde1'][(i + j * 3) % 4];
+        rrect(x, i * s + ox + 3, j * s + 3, s - 6, s - 6, 10);
+        if (ox) rrect(x, ox - s + 3, j * s + 3, s - 6, s - 6, 10);
+      }
+      noise(x, w, h, 6);
+      const conf = ['#ff6f91', '#ffd23f', '#5cc8ff', '#7be07a', '#b48cff'];
+      for (let i = 0; i < 26; i++) { x.fillStyle = conf[i % 5]; x.save(); x.translate(Math.random() * w, Math.random() * h); x.rotate(Math.random() * 3); x.fillRect(-3, -1.5, 6, 3); x.restore(); }
+    },
+  },
+  space: {
+    // Pale moon dust with soft craters under a violet night sky; bright toys pop on it.
+    label: 'Moon Camp', sky: 0x3a3b7c, hemiSky: 0xf2f0ff, hemiGround: 0xbab3dc, surround: 0x9d97c4, wall: 0xd7dcf0, accent: '#8a7dff',
+    tile: 5, floor: (x, w, h) => {
+      x.fillStyle = '#d4d0e8'; x.fillRect(0, 0, w, h);
+      noise(x, w, h, 10);
+      const crater = (cx, cy, r) => {
+        for (const [ox, oy] of [[0, 0], [w, 0], [-w, 0], [0, h], [0, -h]]) {
+          x.fillStyle = 'rgba(120,110,170,.16)'; x.beginPath(); x.arc(cx + ox, cy + oy, r, 0, 6.3); x.fill();
+          x.strokeStyle = 'rgba(255,255,255,.5)'; x.lineWidth = 2; x.beginPath(); x.arc(cx + ox - 1, cy + oy - 1, r, 3.4, 5.6); x.stroke();
+        }
+      };
+      [[40, 50, 22], [180, 70, 14], [120, 170, 30], [220, 210, 12], [60, 220, 9], [200, 140, 8]].forEach(([a, b, r]) => crater(a * w / 256, b * h / 256, r * w / 256));
+    },
+  },
+});
+
 export function buildArena(world, arena, root, patchGround) {
   const W = WORLDS[world];
   const g = new THREE.Group();

@@ -216,7 +216,11 @@ export class Round {
           o.body.applyImpulse({ x: dx * inv * m * 5.0 * s * dt, y: -m * 8 * dt, z: dz * inv * m * 5.0 * s * dt }, true);
         }
       }
-      if ((t.y < o.hh - 0.12 && d < h.r) || t.y < -0.1) { o.captured = h.k; o.capT = 0; o.capY = t.y; }
+      // Captured = sunk a little over the hole, or (tall props) tipped over the hole: a long thin
+      // prop can lean diagonally in the shaft with its center barely lowered.
+      let tipped = false;
+      if (d < h.r && t.y < o.hh - 0.02) { const q = o.body.rotation(); tipped = 1 - 2 * (q.x * q.x + q.z * q.z) < 0.85; }
+      if ((t.y < o.hh - 0.12 && d < h.r) || tipped || t.y < -0.1) { o.captured = h.k; o.capT = 0; o.capY = t.y; }
     }
   }
 
@@ -344,10 +348,19 @@ export class Round {
     // wedged object must never block the hole.
     o.capT += dt;
     if (t.y < o.capY - 0.04) { o.capY = t.y; o.capT = 0; }
-    if (o.capT > 0.7 && d < h.r) {
-      o.collider.setCollisionGroups(FALLTHROUGH);
-      o.body.wakeUp();
-      o.body.applyImpulse({ x: 0, y: -o.prop.mass * 2, z: 0 }, true);
+    // A tall prop can tip over and lie ACROSS the rim with its center outside the hole (Season 3
+    // balloons): drag it back over the hole, then let it drop like any other wedge.
+    if (o.capT > 0.7) {
+      // ...and nothing stays wedged for long: after 3 s it drops wherever it is.
+      if (d < h.r + o.prop.fit * 0.4 || o.capT > 3) {
+        o.collider.setCollisionGroups(FALLTHROUGH);
+        o.body.wakeUp();
+        o.body.applyImpulse({ x: 0, y: -o.prop.mass * 2, z: 0 }, true);
+      } else if (d < h.r + Math.max(o.prop.fit / 2, o.hh) + 0.3) {
+        const m = o.prop.mass * 8 * dt;
+        o.body.wakeUp();
+        o.body.applyImpulse({ x: ((h.x - t.x) / d) * m, y: 0, z: ((h.z - t.z) / d) * m }, true);
+      }
     }
   }
 

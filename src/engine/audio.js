@@ -35,6 +35,7 @@ const MUSIC_KEYS = {
   menu: 'peaceful_village', zen: 'holy_sanctuary', race: 'traveling_the_sky', bakery: 'lively_city',
   picnic: 'long_journey', playroom: 'spirits_forest', garden: 'east_town', beach: 'traveling_the_sky',
   kitchen: 'wood_forest_town', candy: 'lively_city', farm: 'long_journey', snow: 'holy_sanctuary',
+  craft: 'wood_forest_town', fair: 'lively_city', space: 'traveling_the_sky',
   // aliases: old main.js keys and the town world
   calm: 'peaceful_village', play: 'lively_city', city: 'lively_city', title: 'peaceful_village', map: 'peaceful_village',
 };

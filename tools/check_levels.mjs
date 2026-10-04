@@ -1,11 +1,13 @@
 // Content checker for Gulp's props + levels, both seasons:
 //   Season 1: props_cozy.js (80 props)  + levels.js        (30 levels, ids 1-30)
 //   Season 2: props_wave2.js            + levels_wave2.js  (15 levels, ids 31-45)
+//   Season 3: props_wave3.js            + levels_wave3.js  (15 levels, ids 46-60)
 //
 //   node tools/check_levels.mjs           everything
 //   node tools/check_levels.mjs --props   props only (both packs)
 //   node tools/check_levels.mjs --s1      Season 1 props + levels only
 //   node tools/check_levels.mjs --s2      Season 2 props + levels only
+//   node tools/check_levels.mjs --s3      Season 3 props + levels only
 //
 // Bundles the real game modules with esbuild (so the ESM sources run in node as-is) and
 // places every level with the ENGINE's own buildLevel(), so what is checked is exactly
@@ -19,7 +21,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PROPS_ONLY = process.argv.includes('--props');
-const WANT = process.argv.includes('--s1') ? [1] : process.argv.includes('--s2') ? [2] : [1, 2];
+const WANT = process.argv.includes('--s1') ? [1] : process.argv.includes('--s2') ? [2] : process.argv.includes('--s3') ? [3] : [1, 2, 3];
 const CLEAR = 0.1;            // min gap between colliders
 const EDGE = 1.0;             // min distance from arena edge
 const START_CLEAR = 1.0;      // min gap between the start hole (r 0.5) and any object
@@ -28,6 +30,7 @@ const R0 = 0.5, GROW = 0.0436, FIT = 0.9;
 const PACKS = [
   { name: 'cozy', season: 1, file: 'src/game/props_cozy.js' },
   { name: 'wave2', season: 2, file: 'src/game/props_wave2.js' },
+  { name: 'wave3', season: 3, file: 'src/game/props_wave3.js' },
 ];
 const SEASONS = [
   { season: 1, file: 'src/game/levels.js', count: 30, firstId: 1, margin: 1.4, // filler must reach the largest target with 40% to spare
@@ -36,6 +39,13 @@ const SEASONS = [
     worlds: ['candy', 'farm', 'snow'], pack: 'wave2',
     // Season 2 house rules (she has mastered Season 1)
     arena: { w: [20, 30], d: [28, 40] }, time: [120, 300], types: [2, 3], tintFrom: 32,
+    ops: ['grid', 'ring', 'line', 'at'], centerpiece: { every: 5, minFit: 5 } },
+  // Season 3 is the CHALLENGE season: margins are computed at CHALLENGE growth (the
+  // player's hole grows at 0.75x, difficulty.js), so the filler must carry 40% spare value
+  // even at the slower growth. Same house rules as Season 2.
+  { season: 3, file: 'src/game/levels_wave3.js', count: 15, firstId: 46, margin: 1.4, grow: 0.75,
+    worlds: ['craft', 'fair', 'space'], pack: 'wave3',
+    arena: { w: [20, 30], d: [28, 40] }, time: [120, 300], types: [2, 3], tintFrom: 46,
     ops: ['grid', 'ring', 'line', 'at'], centerpiece: { every: 5, minFit: 5 } },
 ];
 
@@ -133,7 +143,7 @@ for (const pack of PACKS) if (WANT.includes(pack.season)) checkProps(pack);
 
 // ------------------------------------------------------------------ levels
 const opCount = (op) => ({ grid: (op.cols || 0) * (op.rows || 0), ring: op.n, line: op.n, pile: op.n, at: 1 }[op.op] ?? -1);
-const needFor = (f) => Math.max(0, ((f * f) / (4 * FIT * FIT) - R0 * R0) / GROW);
+const needFor = (f, g = GROW) => Math.max(0, ((f * f) / (4 * FIT * FIT) - R0 * R0) / g);
 
 // footprint: {x, z, c, s, hx, hz} rectangle or {x, z, r} circle
 const foot = (prop, x, z, rot) => {
@@ -259,16 +269,17 @@ function checkSeason(S) {
       maxFit = Math.max(maxFit, PROPS[t.id].fit);
       tdesc.push(`${t.n === 'all' ? m.length : t.n} ${t.id}${t.tint !== undefined ? `/${t.tint}` : ''}`);
     }
+    const G = GROW * (S.grow || 1); // the player's growth rate this season is checked at
     const fill = objs.filter((o) => !isT(o)).sort((a, b) => a.prop.fit - b.prop.fit);
     let mass = 0, r = R0, idx = 0;
-    while (idx < fill.length && fill[idx].prop.fit <= FIT * 2 * r) { mass += fill[idx].prop.value; r = Math.sqrt(R0 * R0 + GROW * mass); idx++; }
-    const need = needFor(maxFit);
+    while (idx < fill.length && fill[idx].prop.fit <= FIT * 2 * r) { mass += fill[idx].prop.value; r = Math.sqrt(R0 * R0 + G * mass); idx++; }
+    const need = needFor(maxFit, G);
     const ratio = need > 0 ? mass / need : Infinity;
     if (ratio < S.margin) fail(where, `filler reaches value ${mass}, largest target (fit ${maxFit}) needs ${need.toFixed(0)} x ${S.margin}`);
     // whole-level greedy: everything should be edible eventually (soft)
     const all = [...objs].sort((a, b) => a.prop.fit - b.prop.fit);
     let m2 = 0, r2 = R0, j2 = 0;
-    while (j2 < all.length && all[j2].prop.fit <= FIT * 2 * r2) { m2 += all[j2].prop.value; r2 = Math.sqrt(R0 * R0 + GROW * m2); j2++; }
+    while (j2 < all.length && all[j2].prop.fit <= FIT * 2 * r2) { m2 += all[j2].prop.value; r2 = Math.sqrt(R0 * R0 + G * m2); j2++; }
     if (j2 < all.length) warns.push(`${where}: ${all.length - j2} objects never become edible (largest ${all[all.length - 1].id})`);
     // starter ladder near the start
     const near = objs.filter((o) => o.prop.fit <= FIT * 2 * R0 && Math.hypot(o.x - sx, o.z - sz) < 6).length;

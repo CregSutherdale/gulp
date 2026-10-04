@@ -80,10 +80,12 @@ export class UI {
       <div class="maptop"><button class="btn ghost round" data-a="back" aria-label="Back">‹</button><h2>Levels</h2><div class="starcount">★ ${stars}</div></div>
       ${byWorld.map((w, wi) => {
         const W = WORLDS[w.world];
-        const season2 = w.list[0].id >= 31 && (wi === 0 || byWorld[wi - 1].list[0].id < 31);
+        // A season header above the first world of Season 2 (ids 31+) and Season 3 (ids 46+).
+        const seasonOf = (id) => (id >= 46 ? 3 : id >= 31 ? 2 : 1);
+        const sn = seasonOf(w.list[0].id), newSeason = sn > 1 && (wi === 0 || seasonOf(byWorld[wi - 1].list[0].id) < sn);
         const ic = w.list[0].targets[0];
         const got = w.list.reduce((a, l) => a + (save.stars[l.id] || 0), 0);
-        return `${season2 ? '<div class="season">✨ Season 2 ✨</div>' : ''}<div class="world" style="--wc:${W.accent}"><h3><img class="wicon"  alt="" src="${this.icons.get(ic.id, ic.tint ?? 0)}">${W.label}<span class="wstars">★ ${got}/${w.list.length * 3}</span></h3><div class="lvls">
+        return `${newSeason ? `<div class="season">✨ Season ${sn} ✨</div>` : ''}<div class="world" style="--wc:${W.accent}"><h3><img class="wicon"  alt="" src="${this.icons.get(ic.id, ic.tint ?? 0)}">${W.label}<span class="wstars">★ ${got}/${w.list.length * 3}</span></h3><div class="lvls">
           ${w.list.map((l) => {
             const idx = levels.indexOf(l), got = save.stars[l.id] || 0, locked = idx > unlockedUpTo;
             const st = got ? '★'.repeat(got) + '☆'.repeat(3 - got) : '';

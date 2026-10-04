@@ -8,6 +8,8 @@ const STUBS = {
   'levels.js': "export { LEVELS } from '/src/game/levels_starter.js';",
   'props_wave2.js': 'export {};',
   'levels_wave2.js': 'export const LEVELS = [];',
+  'props_wave3.js': 'export {};',
+  'levels_wave3.js': 'export const LEVELS = [];',
 };
 
 export default {

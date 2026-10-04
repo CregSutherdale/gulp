@@ -1,4 +1,4 @@
-// Dev page: preview one Season 2 level exactly as the game builds it (Round -> buildLevel ->
+// Dev page: preview one level (any season) exactly as the game builds it (Round -> buildLevel ->
 // World, physics settle, the level-intro overview camera), or framed straight from above.
 //   /levels2.html?id=31                 intro overview (pitch 62, portrait-aware framing)
 //   ?view=top                           orthographic top-down of the whole arena
@@ -9,7 +9,7 @@
 import '../game/props_cozy.js';
 import '../game/props_wave2.js';
 import * as THREE from 'three';
-import { LEVELS } from '../game/levels_wave2.js';
+import { LEVELS } from '../game/allLevels.js'; // any season: ?id=46 previews Season 3
 import { initPhysics, PhysicsWorld } from '../engine/physics.js';
 import { Renderer } from '../engine/render.js';
 import { Round } from '../game/round.js';

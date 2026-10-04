@@ -1,7 +1,7 @@
 // Dev page: one world's arena + backdrop scenery, seen exactly like the game camera.
 //   /backdrop.html?world=beach&w=18&d=26&dist=15
 // Params:
-//   world  bakery|picnic|playroom|garden|beach|kitchen
+//   world  bakery|picnic|playroom|garden|beach|kitchen|candy|farm|snow|craft|fair|space
 //   w, d   arena size (default 18 x 26)
 //   at     start (default: [0, d/2-3]) | far | near | left | right | center | farleft | farright
 //   hx, hz explicit look point (overrides `at`)
@@ -150,8 +150,9 @@ async function addProps() {
   try {
     const cozy = await import('../game/props_cozy.js');
     const wave2 = await import('../game/props_wave2.js').catch(() => ({}));
+    const wave3 = await import('../game/props_wave3.js').catch(() => ({}));
     const { PROPS, buildGeometry, colliderHalfHeight } = await import('../game/props.js');
-    const ids = (cozy.COZY_WORLDS?.[world] || wave2.WAVE2_WORLDS?.[world] || []).filter((id) => PROPS[id] && PROPS[id].fit <= 2.6);
+    const ids = (cozy.COZY_WORLDS?.[world] || wave2.WAVE2_WORLDS?.[world] || wave3.WAVE3_WORLDS?.[world] || []).filter((id) => PROPS[id] && PROPS[id].fit <= 2.6);
     if (!ids.length) return;
     const R = rng(4242);
     const mat = patchProps(new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 38, specular: 0x2a2a2a }));

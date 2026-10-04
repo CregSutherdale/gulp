@@ -29,12 +29,13 @@ from audio_build import AUDIO_JS, HG_PACK, KEYMAP, MUSIC_DB_RUNTIME, OUT_DIR, SH
 SR = 48000
 # Keys allowed to share one track (same mood family). Anything else reusing a track fails.
 SHARED_OK = {
-    frozenset(("race", "beach")),     # Traveling the Sky: fast, airy
-    frozenset(("bakery", "candy")),   # Lively City: sugary, bouncy
+    frozenset(("race", "beach", "space")),     # Traveling the Sky: fast, airy
+    frozenset(("bakery", "candy", "fair")),    # Lively City: sugary, bouncy
+    frozenset(("kitchen", "craft")),           # Wood Forest Town: warm, cozy indoors
     frozenset(("picnic", "farm")),    # Long Journey: sunny outdoors
     frozenset(("zen", "snow")),       # Holy Sanctuary: gentle, still
 }
-SEASON2 = ("candy", "farm", "snow")
+SEASON2 = ("candy", "farm", "snow", "craft", "fair", "space")  # Season 2 + 3 world keys
 
 
 def music_check():
@@ -94,7 +95,7 @@ def map_check():
             fails += 1
     for k in SEASON2:
         if k not in KEYMAP or gen.get(k) != KEYMAP.get(k):
-            print(f"FAIL Season 2 key {k} missing from the map or from audio.js")
+            print(f"FAIL Season 2/3 key {k} missing from the map or from audio.js")
             fails += 1
     users = {}
     for k, v in KEYMAP.items():
