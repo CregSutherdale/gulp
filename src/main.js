@@ -5,7 +5,7 @@ import { Input } from './engine/input.js';
 import * as AudioMod from './engine/audio.js';
 import { Round } from './game/round.js';
 import { LEVELS } from './game/levels.js';
-import { loadSave, writeSave, totalStars } from './game/save.js';
+import { loadSave, writeSave, totalStars, exportProgress, importProgress } from './game/save.js';
 import { skinById, animateSkin } from './game/skins.js';
 import { UI } from './ui/ui.js';
 import { PROPS } from './game/props.js';
@@ -255,7 +255,11 @@ function home() {
     onZen: showZen,
     onRace: startRace,
     onSkins: () => ui.skins({ save, stars: totalStars(save), onPick: (id) => { save.skin = id; writeSave(save); recolorPlayer(); }, onBack: home }),
-    onSettings: () => ui.settings({ save, onToggle: toggle, onBack: home, credits: AudioMod.CREDITS }),
+    onSettings: () => ui.settings({
+      save, onToggle: toggle, onBack: home, credits: AudioMod.CREDITS,
+      onExport: () => exportProgress(save),
+      onImport: (code) => { importProgress(save, code); writeSave(save); recolorPlayer(); },
+    }),
     onBook: () => ui.book({ groups: bookGroups(), eaten: save.eaten, onBack: home }),
   });
 }

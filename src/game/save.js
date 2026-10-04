@@ -29,3 +29,28 @@ export function writeSave(s) {
   try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) { /* private mode: progress lives for this session only */ }
 }
 export const totalStars = (s) => Object.values(s.stars).reduce((a, b) => a + b, 0);
+
+// Progress transfer between Safari and the Home Screen app (iOS keeps them apart),
+// or to a new phone. The code is plain base64 JSON of the progress fields.
+const PROGRESS_KEYS = ['stars', 'best', 'eaten', 'skin', 'raceWins', 'zenBest', 'seenHelp', 'seenHelpers'];
+export function exportProgress(s) {
+  const o = { g: 1 };
+  for (const k of PROGRESS_KEYS) o[k] = s[k];
+  return 'GULP-' + btoa(unescape(encodeURIComponent(JSON.stringify(o))));
+}
+// Merge never loses anything: best stars, fastest times, biggest counts.
+export function importProgress(s, code) {
+  const txt = String(code || '').trim().replace(/^GULP-/, '');
+  const o = JSON.parse(decodeURIComponent(escape(atob(txt))));
+  if (!o || o.g !== 1 || typeof o.stars !== 'object') throw new Error('not a Gulp progress code');
+  for (const [id, n] of Object.entries(o.stars || {})) s.stars[id] = Math.max(s.stars[id] || 0, n | 0);
+  s.best = s.best || {};
+  for (const [id, t] of Object.entries(o.best || {})) if (typeof t === 'number') s.best[id] = s.best[id] === undefined ? t : Math.min(s.best[id], t);
+  s.eaten = s.eaten || {};
+  for (const [id, n] of Object.entries(o.eaten || {})) s.eaten[id] = Math.max(s.eaten[id] || 0, n | 0);
+  if (o.skin) s.skin = o.skin;
+  s.raceWins = Math.max(s.raceWins || 0, o.raceWins | 0);
+  s.zenBest = Math.max(s.zenBest || 0, o.zenBest | 0);
+  s.seenHelp = s.seenHelp || !!o.seenHelp; s.seenHelpers = s.seenHelpers || !!o.seenHelpers;
+  return s;
+}

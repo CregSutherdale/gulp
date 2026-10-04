@@ -241,12 +241,30 @@ export class UI {
       e.stopPropagation(); s.classList.toggle('on'); this.audio.tap(); onToggle(s.dataset.k, s.classList.contains('on'));
     }));
   }
-  settings({ save, onToggle, onBack, credits }) {
+  settings({ save, onToggle, onBack, credits, onExport, onImport }) {
     const el = $(`<div class="screen dim"><div class="panel"><h2>Settings</h2>
       ${this.toggles(save, true)}
+      <div class="xfer"><div class="sub" style="margin:10px 0 8px">Moving to the Home Screen app or a new phone?</div>
+        <div class="row" style="flex-wrap:nowrap"><button class="btn sky small" data-a="export" style="flex:1">Copy my progress</button><button class="btn ghost small" data-a="import" style="flex:1">Paste progress</button></div>
+        <textarea class="code hidden" id="xfercode" rows="3" spellcheck="false" aria-label="Progress code"></textarea>
+        <div class="xmsg"></div></div>
       <div class="credits">${credits || 'Music by HydroGene.'}<br>Made with love for Amanda by Creg.</div>
       <div class="col" style="margin-top:16px"><button class="btn mint" data-a="back" data-focus>Done</button></div></div></div>`);
     this.bindToggles(el, onToggle); this.on(el, '[data-a=back]', onBack);
+    const box = el.querySelector('#xfercode'), msg = el.querySelector('.xmsg');
+    this.on(el, '[data-a=export]', async () => {
+      const code = onExport();
+      box.classList.remove('hidden'); box.value = code; box.readOnly = true;
+      try { await navigator.clipboard.writeText(code); msg.textContent = 'Copied! Open Gulp where you want it, then Settings → Paste progress.'; }
+      catch (e) { box.focus(); box.select(); msg.textContent = 'Select the code above and copy it.'; }
+    });
+    this.on(el, '[data-a=import]', () => {
+      if (box.classList.contains('hidden') || box.readOnly) {
+        box.classList.remove('hidden'); box.readOnly = false; box.value = ''; box.placeholder = 'Paste the GULP-… code here, then tap Paste progress again';
+        box.focus(); msg.textContent = ''; return;
+      }
+      try { onImport(box.value); msg.textContent = 'Progress added! ♡'; } catch (e) { msg.textContent = "That code didn't work. Copy it again and paste the whole thing."; }
+    });
     return this.show(el);
   }
   skins({ save, stars, onPick, onBack }) {

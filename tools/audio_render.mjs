@@ -15,7 +15,9 @@ import { spawn, execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = path.resolve(process.argv[2] || path.join(os.tmpdir(), 'gulp_audio_sfx'));
+const argv = process.argv.slice(2);
+const LIVE = argv.includes('--live') ? argv[argv.indexOf('--live') + 1] : null;
+const OUT = path.resolve(argv.find((a, i) => !a.startsWith('--') && argv[i - 1] !== '--live') || path.join(os.tmpdir(), 'gulp_audio_sfx'));
 fs.mkdirSync(OUT, { recursive: true });
 
 // ------------------------------------------------------------------ the in-page harness
@@ -204,7 +206,7 @@ const wsUrl = await new Promise((resolve, reject) => {
   });
 });
 const dbgPort = new URL(wsUrl).port;
-const tab = await (await fetch(`http://127.0.0.1:${dbgPort}/json/new?http://127.0.0.1:${PORT}/__audio_test.html`, { method: 'PUT' })).json();
+const tab = await (await fetch(`http://127.0.0.1:${dbgPort}/json/new?${LIVE ? 'about:blank' : `http://127.0.0.1:${PORT}/__audio_test.html`}`, { method: 'PUT' })).json();
 const ws = new WebSocket(tab.webSocketDebuggerUrl);
 await new Promise((r) => ws.addEventListener('open', r, { once: true }));
 let msgId = 0;
@@ -223,6 +225,71 @@ const evaluate = async (expr) => {
   if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description || r.result.exceptionDetails.text);
   return r.result.result.value;
 };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ------------------------------------------------------------------ live mode: the real game
+// Loads the running game, taps like a person (trusted input = a real user gesture), enters Zen
+// and lets auto-steer eat. Proves unlock, lazy music, legacy calls and live SFX end to end.
+if (LIVE) {
+  let code = 0;
+  try {
+    await cdp('Page.enable'); await cdp('Network.enable');
+    const music = [];
+    ws.addEventListener('message', (ev) => {
+      const m = JSON.parse(ev.data);
+      if (m.method === 'Network.responseReceived' && /\/music\//.test(m.params.response.url)) music.push(`${m.params.response.status} ${m.params.response.url.replace(/^.*\/music\//, 'music/')}`);
+    });
+    await cdp('Page.addScriptToEvaluateOnNewDocument', { source: `
+      window.__ctxs = []; window.__src = []; window.__osc = 0;
+      const C = window.AudioContext;
+      window.AudioContext = class extends C { constructor(...a) { super(...a); window.__ctxs.push(this); } };
+      const bs = AudioBufferSourceNode.prototype.start;
+      AudioBufferSourceNode.prototype.start = function (...a) {
+        if (this.buffer && this.buffer.duration > 5) window.__src.push({ dur: +this.buffer.duration.toFixed(3), loop: this.loop, ls: this.loopStart, le: +this.loopEnd.toFixed(3), off: a[1] });
+        return bs.apply(this, a);
+      };
+      const os = OscillatorNode.prototype.start;
+      OscillatorNode.prototype.start = function (...a) { window.__osc++; return os.apply(this, a); };` });
+    await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await cdp('Page.navigate', { url: LIVE });
+    for (let i = 0; i < 80 && !(await evaluate('!!(window.__game && !document.getElementById("loading"))').catch(() => false)); i++) await sleep(250);
+    const before = await evaluate('({ ctxs: window.__ctxs.length, osc: window.__osc })');
+    console.log(`live: game booted; before any tap: ${before.ctxs} AudioContext(s) (iOS rule: must be 0), ${before.osc} oscillators`);
+    const tap = async (x, y) => {
+      await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+      await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+    };
+    await tap(20, 820); // first touch anywhere: the unlock gesture
+    await sleep(3000);
+    const s1 = await evaluate('({ state: window.__ctxs[0]?.state, t: window.__ctxs[0]?.currentTime, src: window.__src })');
+    console.log(`live: after first tap: context ${s1.state}, clock ${s1.t?.toFixed(2)} s; music starts: ${JSON.stringify(s1.src)}`);
+    console.log(`live: music requests: ${music.join(', ') || 'none'}`);
+    const zen = await evaluate(`(() => { const b = [...document.querySelectorAll('#ui button')].find((x) => /zen/i.test(x.textContent)); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, label: b.textContent.trim() }; })()`);
+    if (zen) {
+      const o0 = await evaluate('window.__osc');
+      const hit = await evaluate(`(() => { const e = document.elementFromPoint(${zen.x}, ${zen.y}); return e ? e.tagName + '.' + e.className + ' "' + (e.textContent || '').trim().slice(0, 30) + '"' : 'nothing'; })()`);
+      await tap(zen.x, zen.y);
+      await sleep(800);
+      // The Zen button may open a setup screen first: press its start button if there is one.
+      const go = await evaluate(`(() => { const bs = [...document.querySelectorAll('#ui button')]; const b = bs.find((x) => !x.disabled && x.textContent.trim().length > 2 && !/unlock|‹/i.test(x.textContent)); return { all: bs.map((x) => x.textContent.trim().slice(0, 18)), go: b ? (() => { const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, label: b.textContent.trim() }; })() : null }; })()`);
+      console.log(`live: buttons on the next screen: ${JSON.stringify(go.all)}`);
+      if (go.go) { await tap(go.go.x, go.go.y); console.log(`live: pressed "${go.go.label}"`); }
+      await sleep(12000);
+      const o1 = await evaluate('window.__osc');
+      const st = await evaluate(`({ kind: window.__game?.round?.kind, eaten: window.__game?.round?.player?.score, screen: document.querySelector('#ui')?.innerText.replace(/\\s+/g, ' ').slice(0, 80) })`);
+      console.log(`live: element under the tap: ${hit}; round after: ${JSON.stringify(st)}`);
+      console.log(`live: tapped "${zen.label}", 12 s of Zen auto-steer: ${o1 - o0} oscillator starts (taps, pops, chimes)`);
+      if (o1 - o0 < 3) { console.log('live: FAIL no SFX activity'); code = 1; }
+    } else console.log('live: (no Zen button found on this screen; skipped the gameplay part)');
+    const errs = consoleLines.filter((l) => /EXCEPTION|error|failed|unknown music/i.test(l));
+    console.log(`live: console errors/warnings about audio: ${errs.length ? errs.join(' | ') : 'none'}`);
+    if (errs.length || s1.state !== 'running' || !s1.src.length || !music.length || before.ctxs) code = 1;
+  } catch (e) { console.error('LIVE ERROR', e.message); code = 1; }
+  ws.close(); server.close(); killChrome();
+  try { fs.rmSync(profile, { recursive: true, force: true }); } catch (e) { /* locked briefly */ }
+  console.log(`LIVE RESULT: ${code ? 'problems' : 'ok'}`);
+  process.exit(code);
+}
 for (let i = 0; i < 100 && !(await evaluate('!!window.__ready')); i++) await new Promise((r) => setTimeout(r, 100));
 if (!(await evaluate('!!window.__ready'))) { console.error('harness did not load:\n' + consoleLines.join('\n')); process.exit(3); }
 

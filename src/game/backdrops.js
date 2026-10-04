@@ -164,22 +164,24 @@ function speckle(x, s, R, amt, alpha = 1) {
 const marbleTex = (R) => canvasTex(256, (x, s) => {
   x.fillStyle = '#fdf6f7'; x.fillRect(0, 0, s, s);
   for (let i = 0; i < 12; i++) {
-    const cx = R() * s, cy = R() * s, rr = 30 + R() * 70, tone = R() < 0.5 ? '242,214,224' : '228,226,236';
+    const cx = R() * s, cy = R() * s, rr = 30 + R() * 70, tone = R() < 0.5 ? '244,222,230' : '232,230,240';
     for (const [ox, oy] of WRAP9) {
-      const g = x.createRadialGradient(cx + ox * s, cy + oy * s, 0, cx + ox * s, cy + oy * s, rr);
-      g.addColorStop(0, `rgba(${tone},0.45)`); g.addColorStop(1, `rgba(${tone},0)`);
-      x.fillStyle = g; x.fillRect(0, 0, s, s);
+      const X = cx + ox * s, Y = cy + oy * s;
+      if (X + rr < 0 || X - rr > s || Y + rr < 0 || Y - rr > s) continue;
+      const g = x.createRadialGradient(X, Y, 0, X, Y, rr);
+      g.addColorStop(0, `rgba(${tone},0.5)`); g.addColorStop(1, `rgba(${tone},0)`);
+      x.fillStyle = g; x.fillRect(X - rr, Y - rr, rr * 2, rr * 2);
     }
   }
-  for (let v = 0; v < 7; v++) {
+  for (let v = 0; v < 4; v++) {
     const pts = []; let px = R() * s, py = R() * s, a = R() * TAU;
-    for (let k = 0; k < 26; k++) { a += (R() - 0.5) * 0.7; px += Math.cos(a) * 9; py += Math.sin(a) * 9; pts.push([px, py]); }
-    const wdt = 0.7 + R() * 1.6, al = 0.22 + R() * 0.3;
+    for (let k = 0; k < 26; k++) { a += (R() - 0.5) * 0.5; px += Math.cos(a) * 9; py += Math.sin(a) * 9; pts.push([px, py]); }
+    const wdt = 1.2 + R() * 1.4, al = 0.16 + R() * 0.16;
     for (const [ox, oy] of WRAP9) {
       x.beginPath();
       pts.forEach(([a1, b1], k) => (k ? x.lineTo(a1 + ox * s, b1 + oy * s) : x.moveTo(a1 + ox * s, b1 + oy * s)));
-      x.strokeStyle = `rgba(214,178,192,${al * 0.45})`; x.lineWidth = wdt * 3.5; x.stroke();
-      x.strokeStyle = `rgba(184,146,162,${al})`; x.lineWidth = wdt; x.stroke();
+      x.strokeStyle = `rgba(226,200,212,${al * 0.6})`; x.lineWidth = wdt * 4; x.stroke();
+      x.strokeStyle = `rgba(206,176,190,${al})`; x.lineWidth = wdt; x.stroke();
     }
   }
   speckle(x, s, R, 5);
@@ -369,10 +371,15 @@ const PASTEL = [0xff9ec8, 0x9fe6cc, 0x9fd2ff, 0xffe27a, 0xc9b2ff, 0xffbf94];
 const FLOWER = [0xff6f9c, 0xffd23f, 0xffffff, 0xff9a3a, 0xc58cff, 0xff5a6e, 0x7fc8ff];
 
 // Fluffy round tree: trunk + a cluster of balls, darker underneath.
+function farTree(K, h, cr, leaf, trunk = 0x9a6a44) {
+  const can = [egg(cr, cr * 0.95, cr, leaf, 0, h - cr, 0, 9, 6), ballC(cr * 0.6, leaf, cr * 0.55, h - cr * 1.1, cr * 0.2, 0)];
+  shadeY(can, h - cr * 2, h, 0.62, 1.15);
+  return [cyl(cr * 0.14, cr * 0.2, h - cr * 1.3, trunk, 0, 0, 0, 5), ...can];
+}
 function roundTree(K, h, cr, leaf, trunk = 0x9a6a44) {
   const th = Math.max(1.2, h - cr * 1.7);
   const parts = [cyl(cr * 0.13, cr * 0.19, th + cr * 0.5, trunk, 0, 0, 0, 7)];
-  const cy = th + cr * 0.75, can = [ballC(cr, leaf, 0, cy, 0, 2)];
+  const cy = th + cr * 0.75, can = [egg(cr, cr, cr, leaf, 0, cy, 0, 12, 8)];
   const n = 3 + Math.floor(K.R() * 2);
   for (let i = 0; i < n; i++) {
     const a = (i / n) * TAU + K.R(), rr = cr * K.rnd(0.5, 0.66);
@@ -440,7 +447,7 @@ function picketFence(x0, z0, x1, z1, h = 2.0, gap = 0.62) {
     const t = i / n, x = x0 + (x1 - x0) * t, z = z0 + (z1 - z0) * t;
     const big = i % 6 === 0;
     parts.push(box(big ? 0.4 : 0.34, big ? h + 0.25 : h, 0.12, WHITE, x, 0, z, -ang));
-    const tip = new THREE.ConeGeometry(big ? 0.29 : 0.24, 0.38, 4).rotateY(PI / 4).translate(0, (big ? h + 0.25 : h) + 0.19, 0).scale(1, 1, 0.42).rotateY(-ang).translate(x, 0, z);
+    const tip = new THREE.ConeGeometry(big ? 0.29 : 0.24, 0.38, 4, 1, true).rotateY(PI / 4).translate(0, (big ? h + 0.25 : h) + 0.19, 0).scale(1, 1, 0.42).rotateY(-ang).translate(x, 0, z);
     parts.push(custom(tip, WHITE));
   }
   for (const y of [h * 0.28, h * 0.72]) {
@@ -577,13 +584,13 @@ function bakery(K) {
   G.push(box(2 * RX, 0.6, 0.6, WHITE, 0, TOP - 0.6, BZ + 0.3));
 
   // Backsplash of pastel tiles.
-  const pal = ['#ffc7d9', '#c4f0de', '#fff4e6', '#ffe7a3'];
-  K.meshes.push(texMesh([panel(2 * CX, 7.6, 0xffffff, 0, 0, BZ + 0.04)], tileTex(K.R, pal, (i, j) => ((i + j) % 2 ? 2 : (i % 2 ? 0 : (j % 2 ? 1 : 3)))), 6.4, { phong: true, name: 'tiles', shininess: 70 }));
+  const pal = ['#ffd2e0', '#d2f3e5', '#fff6ec', '#ffeec2'];
+  K.meshes.push(texMesh([panel(2 * CX, 7.6, 0xffffff, 0, 0, BZ + 0.04)], tileTex(K.R, pal, (i, j) => ((i + j) % 2 ? 2 : [0, 1, 0, 3][(i + 3 * j) % 4])), 4.4, { phong: true, name: 'tiles', shininess: 70 }));
   G.push(box(2 * CX + 0.4, 0.4, 0.45, WHITE, 0, 7.6, BZ + 0.22));
 
   // Shelves with jars, cake stands, mugs and plants; a clock in the middle.
   const span = Math.min(CX - 1.5, hw + 9);
-  for (const [y, gapMid] of [[9.3, 3.6], [14.6, 3.6]]) {
+  for (const [y, gapMid] of [[8.8, 3.6], [13.8, 3.6]]) {
     for (const s of [-1, 1]) {
       const a = s > 0 ? gapMid : -span, b = s > 0 ? span : -gapMid;
       G.push(box(b - a, 0.38, 2.5, SHELF, (a + b) / 2, y, BZ + 1.25));
@@ -597,13 +604,13 @@ function bakery(K) {
       }
     }
   }
-  K.add(wallClock(0xff8fb8), 0, 13.2, BZ + 0.05);
+  K.add(wallClock(0xff8fb8), 0, 11.4, BZ + 0.05);
 
   // Pendant lamps over the back counter.
-  const nl = Math.max(2, Math.round((2 * hw) / 10));
+  const nl = Math.max(2, Math.round((2 * hw) / 9));
   for (let i = 0; i < nl; i++) {
-    const x = nl === 1 ? 0 : -(hw - 1.5) + (2 * hw - 3) * (i / (nl - 1));
-    K.add(pendant([0xff8fb8, 0x8fdcc4, 0xffd36e][i % 3], 28), x, 10.4, -(hd + 3.3));
+    const x = -(hw - 2.5) + (2 * hw - 5) * (i / (nl - 1));
+    K.add(pendant([0xff8fb8, 0x8fdcc4, 0xffd36e][i % 3], 30), x, 7.8, -(hd + 3.4), 0, 0.85);
   }
 
   // Counter-top pieces (beyond the rail, profile toward the camera).
@@ -617,28 +624,63 @@ function bakery(K) {
   K.blob(hw + 5.8, 0.02, hd * 0.38, 2.6, 2.6, 0.3);
   K.add(eggCarton(), hw + 9.0, 0, hd * 0.02, -0.25, 1.0);
   K.blob(hw + 9.0, 0.02, hd * 0.02, 2.2, 1.6, 0.25, -0.25);
-  const backZ = -(hd + 3.6);
-  const slots = [-(hw * 0.55 + 3), hw * 0.55 + 3, -(hw + 7), hw + 7.5];
-  K.add(cakeDome(K, 0xffb6cf, 0xfffaf4), slots[0], 0, backZ, 0, 1.0);
-  K.add(cakeDome(K, 0xffe3a6, 0xc98a5b), slots[1], 0, backZ, 0.5, 0.9);
-  for (const x of [slots[0], slots[1]]) K.blob(x, 0.02, backZ, 2.6, 2.4, 0.3);
-  K.add(canisters(), slots[2], 0, BZ + 1.7, 0, 1.0);
-  K.blob(slots[2], 0.02, BZ + 1.8, 3.6, 1.8, 0.3);
-  K.add(crock(), slots[3], 0, BZ + 1.9, 0.4, 1.0);
-  K.blob(slots[3], 0.02, BZ + 1.9, 1.8, 1.8, 0.3);
+  const backZ = -(hd + 3.7);
+  const row = [
+    () => [cakeDome(K, 0xffb6cf, 0xfffaf4), 4.6, 2.5], () => [{ s: canisters() }, 6.4, 3.0], () => [candyJarBig(K), 3.2, 1.6],
+    () => [cakeDome(K, 0xffe3a6, 0xc98a5b), 4.6, 2.5], () => [{ s: crock() }, 3.0, 1.6], () => [breadBoard(K), 5.4, 2.6],
+    () => [cakeDome(K, 0xc9f0e0, 0xff9ec8), 4.6, 2.5], () => [{ s: [...plates(K), ...put(plates(K), 2.5, 0, 0.3)] }, 5.0, 2.4],
+  ];
+  let rx = -(CX - 1.2), ri = Math.floor(K.R() * row.length);
+  while (rx < CX - 2) {
+    const [it, w, br] = row[ri++ % row.length]();
+    if (rx + w > CX - 0.8) break;
+    K.add(it, rx + w / 2, 0, backZ + K.rnd(-0.4, 0.4), K.rnd(-0.3, 0.3));
+    K.blob(rx + w / 2, 0.02, backZ, br + 0.4, 2.2, 0.32);
+    rx += w + K.rnd(0.6, 1.6);
+  }
 
   // Floor below the counter: stools and a bread crate.
-  const ns = hw > 11 ? 3 : 2;
-  for (let i = 0; i < ns; i++) {
-    const x = (i - (ns - 1) / 2) * Math.min(9, hw * 0.75);
-    K.add(stool([0xff9ec8, 0x9fe6cc, 0xffe27a][i % 3]), x, FL, FZ + 2.8);
-    K.blob(x, FL + 0.03, FZ + 2.8, 1.9, 1.9, 0.4);
-  }
+  const rw = Math.min(hw * 1.3, 14);
+  M.push(rectXZ(-rw, rw, FZ + 1.6, FZ + 5.2, FL + 0.03, 0xff9ec0), rectXZ(-rw + 0.35, rw - 0.35, FZ + 1.95, FZ + 4.85, FL + 0.05, 0xfff1f5));
+  for (let x = -rw + 1.2; x < rw - 0.8; x += 1.6) M.push(disc(0.35, 0xffc2d6, x, FL + 0.07, FZ + 3.4, 10));
+  K.add(teaTowel(), -hw * 0.55, 0, hd + 2.1, 0.12);
+  K.blob(-hw * 0.55, 0.02, hd + 2.1, 1.7, 1.1, 0.18, 0.12);
+  K.add(cakeBoxes(), -(CX - 3.2), FL, FZ + 4.6, 0.3);
+  K.blob(-(CX - 3.2), FL + 0.03, FZ + 4.6, 3.0, 2.6, 0.38);
   K.add(breadCrate(K), CX - 3.5, FL, FZ + 5.5, -0.35);
   K.blob(CX - 3.5, FL + 0.03, FZ + 5.5, 3.2, 2.4, 0.38, -0.35);
   M.push(ringXZ(2.0, 3.2, 0xff9ec0, -(CX - 4), FL + 0.03, FZ + 6, 28), disc(2.0, 0xffe7ef, -(CX - 4), FL + 0.03, FZ + 6, 28));
 }
 
+function teaTowel() {
+  const p = [rbox(2.6, 0.16, 1.5, 0xffffff, 0, 0, 0, 0.06)];
+  for (let i = 0; i < 4; i++) p.push(box(0.26, 0.02, 1.5, 0xff8fb8, -0.95 + i * 0.63, 0.16, 0));
+  for (let j = 0; j < 2; j++) p.push(box(2.6, 0.02, 0.24, 0xff8fb8, 0, 0.17, -0.35 + j * 0.7));
+  p.push(rod([-0.4, 0.3, 0.9], [1.9, 0.25, 0.1], 0.08, 0.1, 0xd9a066), egg(0.42, 0.12, 0.3, 0xd9a066, -0.75, 0.3, 1.05));
+  return p;
+}
+function candyJarBig(K) {
+  const j = candyJar(K);
+  return { s: put(j.s, 0, 0, 0, 0, 1.45), g: put(j.g, 0, 0, 0, 0, 1.45) };
+}
+function breadBoard(K) {
+  const B = 0xe8a95e, BD = 0xc8843f;
+  const p = [rbox(4.8, 0.35, 2.6, 0xd9a066, 0, 0, 0, 0.12), capsule(0.42, 3.0, B, -0.3, 0.75, -0.55, PI / 2), capsule(0.38, 2.6, BD, 0.2, 0.7, 0.45, PI / 2)];
+  for (let i = 0; i < 4; i++) p.push(egg(0.32, 0.08, 0.12, 0xfff3e0, -1.5 + i * 0.85, 1.15, -0.55, 6, 4).rotateY(0.6));
+  p.push(dome(0.95, 0.7, 0.8, B, 1.6, 0.35, 0.0, 12, 4));
+  return { s: p };
+}
+function cakeBoxes() {
+  const p = [], cols = [0xffc2d6, 0xc9f0e0, 0xfff0c2];
+  let y = 0;
+  for (let i = 0; i < 3; i++) {
+    const w = 3.0 - i * 0.5, h = 1.5 - i * 0.15, ry = (i - 1) * 0.25;
+    p.push(box(w, h, w, cols[i], 0, y, 0, ry), box(w + 0.02, h + 0.02, 0.28, 0xff8fb8, 0, y, 0, ry), box(0.28, h + 0.02, w + 0.02, 0xff8fb8, 0, y, 0, ry));
+    y += h;
+  }
+  p.push(torus(0.35, 0.1, 0xff6f9c, -0.25, y + 0.25, 0, 0, 10), torus(0.35, 0.1, 0xff6f9c, 0.25, y + 0.25, 0, 0, 10));
+  return p;
+}
 function shelfItem(K) {
   const k = Math.floor(K.R() * 8);
   if (k === 0 || k === 1) return candyJar(K);
@@ -784,7 +826,7 @@ function kitchen(K) {
   K.floorY = FL; K.shadow = 0x4a2a16;
   const G = K.glossy, M = K.matte;
   const BAND = 0xbb8a5c, EDGE = 0xa77650, APRON = 0x9a6a46, LEG = 0xa87a52;
-  const CAB = 0xa9d3ae, DOOR = 0xc2e3c4, KNOB = 0xe8b44a, TOPC = 0xd9a066, WALL = 0xfff2dc, CAP = 0xffb36b;
+  const CAB = 0xa9d3ae, DOOR = 0xc2e3c4, KNOB = 0xe8b44a, TOPC = 0xecc896, WALL = 0xfff2dc, CAP = 0xffb36b;
 
   // Table: a plank band around the board (flush, under the rail), rounded edge, apron, legs.
   const band = [
@@ -805,13 +847,13 @@ function kitchen(K) {
 
   // Floor, braided rug under the table, soft shadow under the table top.
   K.meshes.push(texMesh([rectXZ(-RX, RX, BZ, hd + 70, FL, 0xffffff)], planksTex(K.R, 27, 42, 47), 14, { name: 'floor' }));
-  const rugC = [0xf6e7cf, 0xe86a5a, 0xf6e7cf, 0x7fb3d9, 0xf2c75c, 0xf6e7cf, 0xe86a5a];
-  const rx = TX + 6, rz = TZ + 5;
-  for (let i = 0; i < rugC.length; i++) {
-    const r0 = 1 - (i + 1) / rugC.length * 0.42, r1 = 1 - i / rugC.length * 0.42;
-    M.push(ringXZ(r0, r1, rugC[i], 0, FL + 0.03, 0, 56, rx, rz));
+  const rugC = [0xc9705a, 0xefdcc0, 0xd9a35a, 0xefdcc0, 0x8fae8a, 0xefdcc0, 0xc9705a, 0xe8cfae, 0xd9a35a, 0xefdcc0];
+  const rx = TX + 3.6, rz = TZ + 3.2, nr = rugC.length;
+  for (let i = 0; i < nr; i++) {
+    const r0 = 1 - ((i + 1) / nr) * 0.36, r1 = 1 - (i / nr) * 0.36;
+    M.push(ringXZ(r0 + 0.004, r1, rugC[i], 0, FL + 0.03, 0, 64, rx, rz));
   }
-  M.push(disc(0.58, 0xf6e7cf, 0, FL + 0.03, 0, 40, rx, rz));
+  M.push(disc(0.64, 0xe8cfae, 0, FL + 0.03, 0, 48, rx, rz));
   K.blob(0, FL + 0.06, 0, TX + 1.2, TZ + 1.2, 0.5);
 
   // Chairs around the sides and the far end (never the near side: it faces the camera).
@@ -898,9 +940,11 @@ function kitchen(K) {
   K.add(wallClock(0xff9a3c), wx, CT + 18.4, BZ + 0.05);
 
   // A sleepy cat on its bed by the near-left corner of the table.
-  K.add(catBed(), -(TX + 5.5), FL, TZ + 4.8, 0.5);
-  K.blob(-(TX + 5.5), FL + 0.04, TZ + 4.8, 3.0, 2.6, 0.4);
-  K.add([cyl(0.9, 0.7, 0.55, 0xff8fb8, 0, 0, 0, 14), disc(0.75, 0x7fc8ff, 0, 0.5, 0, 14)], -(TX + 1.6), FL, TZ + 6.6);
+  const catX = -Math.min(hw * 0.5, 6), catZ = TZ + 5.6;
+  K.add(catBed(), catX, FL, catZ, 0.5);
+  K.blob(catX, FL + 0.04, catZ, 3.0, 2.6, 0.4);
+  K.add([cyl(0.9, 0.7, 0.55, 0xff8fb8, 0, 0, 0, 14), disc(0.75, 0x7fc8ff, 0, 0.5, 0, 14)], catX + 3.6, FL, catZ + 1.2);
+  K.blob(catX + 3.6, FL + 0.04, catZ + 1.2, 1.1, 1.1, 0.35);
 }
 function chair(col, colD, cushion) {
   const P = [box(3.6, 0.45, 3.4, col, 0, 4.2, 0), rbox(3.2, 0.4, 3.0, cushion, 0, 4.62, 0.1, 0.18)];
@@ -1022,12 +1066,34 @@ function playroom(K) {
   K.blob(hw + 7.6, 0.03, hd * 0.12 + 2.6, 2.0, 2.0, 0.35);
 
   // Near side, all low: a wooden train track loop and floor cushions.
-  trainTrack(K, 0, Z0 + B + 4.4, Math.min(hw - 0.5, 10), 3.0);
+  const trx = Math.min(hw - 0.5, 10), trz = 3.0, tcz = Z0 + B + 4.4;
+  trainTrack(K, 0, tcz, trx, trz);
+  const rugR = [0xff8fab, 0xffd166, 0x8fe3b0, 0x8fc8ff, 0xc8a8ff];
+  rugR.forEach((c, i) => K.flat.push(ringXZ(1.0 - (i + 1) * 0.16, 1.0 - i * 0.16, c, 0, 0.03, tcz, 40, trx * 0.62, trz * 0.68)));
+  K.flat.push(disc(0.2, WHITE, 0, 0.03, tcz, 30, trx * 0.62, trz * 0.68));
+  K.add(xylophone(), -trx * 0.3, 0, tcz, 0.15);
+  K.blob(-trx * 0.3, 0.035, tcz, 2.2, 1.4, 0.3);
+  K.add(bookStack(K), trx * 0.32, 0, tcz - 0.2, -0.3);
+  K.blob(trx * 0.32, 0.035, tcz - 0.2, 1.6, 1.3, 0.3);
   for (const s of [-1, 1]) {
-    K.add([egg(2.4, 0.9, 2.4, s > 0 ? 0xffb3c7 : 0x9fe0cf, 0, 0.55, 0, 18, 8), torus(1.2, 0.18, WHITE, 0, 1.25, 0, PI / 2, 16)], s * (X0 + B + 4.8), 0, Z0 + B + 3.2);
-    K.blob(s * (X0 + B + 4.8), 0.03, Z0 + B + 3.2, 2.9, 2.9, 0.4);
+    const cx = s * (X0 + B + 3.6), cz = Z0 + B + 2.2;
+    K.add([egg(2.2, 0.85, 2.2, s > 0 ? 0xffb3c7 : 0x9fe0cf, 0, 0.5, 0, 18, 8), torus(1.1, 0.16, WHITE, 0, 1.18, 0, PI / 2, 16)], cx, 0, cz);
+    K.blob(cx, 0.035, cz, 2.7, 2.7, 0.4);
   }
-  K.add(shapeStar(0xffd23f), -(X0 + B + 1.2), 0, Z0 + B + 7.5, 0.3);
+  K.add(shapeStar(0xffd23f), -(X0 + B + 2.0), 0, Z0 + B + 8.0, 0.3);
+  K.add(shapeStar(0xff9ec8), X0 + B + 2.6, 0, Z0 + B + 8.6, -0.5);
+}
+function xylophone() {
+  const p = [box(4.2, 0.35, 0.3, 0xd9a066, 0, 0.15, -0.9), box(4.2, 0.35, 0.3, 0xd9a066, 0, 0.15, 0.9)];
+  const c = [0xff5a5f, 0xff9a3a, 0xffd23f, 0x5fd16a, 0x4fa3ff, 0xb07cff];
+  c.forEach((col, i) => p.push(rbox(0.55, 0.22, 2.4 - i * 0.18, col, -1.7 + i * 0.68, 0.5, 0, 0.08)));
+  p.push(rod([1.2, 0.85, 1.4], [2.6, 0.75, 2.4], 0.07, 0.07, 0xd9a066), ballC(0.2, 0xff5a5f, 1.2, 0.85, 1.4, 1));
+  return p;
+}
+function bookStack(K) {
+  const p = []; let y = 0;
+  for (let i = 0; i < 3; i++) { const h = 0.32; p.push(box(2.2 - i * 0.2, h, 1.6 - i * 0.1, K.pick([0xff8fa8, 0x8fc8ff, 0xffd36e, 0x9fe0b4, 0xc9a8ff]), 0, y, 0, (i - 1) * 0.2)); y += h; }
+  return p;
 }
 function curtain(K, w, h) {
   const p = [], n = 6;
@@ -1213,7 +1279,7 @@ function picnic(K) {
   };
   for (let x = -(hw + 16); x <= hw + 16; x += K.rnd(4.5, 6.5)) plantTree(x + K.rnd(-1, 1), fz - K.rnd(2.8, 6), K.rnd(0.85, 1.25), K.R() < 0.25 ? 'pine' : 'round');
   for (const s of [-1, 1]) {
-    for (let i = 0; i < 18; i++) {
+    for (let i = 0; i < 12; i++) {
       const x = s * (hw + K.rnd(5.5, 22)), z = K.rnd(-(hd + 4), hd + 6);
       if (s > 0 && Math.abs(z) < hd * 0.4 && x < hw + 9) continue;
       plantTree(x, z, K.rnd(0.7, 1.15), K.R() < 0.3 ? 'pine' : 'round');
@@ -1222,10 +1288,10 @@ function picnic(K) {
   // Rolling hills behind, with trees dotted on them.
   for (let i = 0; i < 14; i++) {
     const x = K.rnd(-(hw + 60), hw + 60), z = -(hd + K.rnd(15, 48)), rx = K.rnd(11, 22), ry = K.rnd(3.5, 8.5), rz = K.rnd(8, 14);
-    const h = dome(rx, ry, rz, K.pick(GREENS), x, -0.3, z, 22, 7);
+    const h = dome(rx, ry, rz, K.pick(GREENS), x, -0.3, z, 18, 6);
     shadeY(h, 0, ry, 0.82, 1.08);
     K.matte.push(h);
-    if (K.R() < 0.7) { const tx = x + K.rnd(-rx, rx) * 0.4, tz = z + K.rnd(-rz, rz) * 0.3; K.add(roundTree(K, 5, 1.7, K.pick([0x4fb04f, 0x5cbf55])), tx, ry * 0.8, tz); }
+    if (K.R() < 0.7) { const tx = x + K.rnd(-rx, rx) * 0.4, tz = z + K.rnd(-rz, rz) * 0.3; K.add(farTree(K, 5, 1.7, K.pick([0x4fb04f, 0x5cbf55])), tx, ry * 0.8, tz); }
   }
   for (const s of [-1, 1]) for (let i = 0; i < 4; i++) {
     const h = dome(K.rnd(9, 15), K.rnd(3, 6), K.rnd(9, 14), K.pick(GREENS), s * (hw + K.rnd(26, 40)), -0.3, K.rnd(-hd, hd + 10), 20, 6);
@@ -1237,7 +1303,7 @@ function picnic(K) {
   for (let i = 0; i < 60; i++) {
     const [x, z] = K.around(2.5, 26, 16), r = K.rnd(1.6, 4.5);
     if (!K.free(x, z, r * 0.6)) continue;
-    K.flat.push(disc(r, K.pick([0x7bbd57, 0x93cf6a, 0x8cc964, 0x76b852]), x, 0.01 + (i % 4) * 0.01, z, 14, 1, K.rnd(0.6, 1.0), K.R() * PI));
+    K.flat.push(disc(r, K.pick([0x80c25c, 0x8dcb66, 0x7aba57, 0x93ce6b]), x, 0.01 + (i % 4) * 0.01, z, 20, 1, K.rnd(0.6, 1.0), K.R() * PI));
   }
   const pathZ = hd + 7.2;
   const pw = [];
@@ -1249,9 +1315,15 @@ function picnic(K) {
   K.flat.push(...pw);
   for (let i = 0; i < 26; i++) {
     const x = K.rnd(-(hw + 20), hw + 20), z = pathZ + Math.sin(x * 0.12) * 1.4 + K.rnd(-0.8, 0.8);
-    K.flat.push(disc(K.rnd(0.18, 0.32), 0xd2b98a, x, 0.075, z, 6));
+    K.flat.push(disc(K.rnd(0.14, 0.24), 0xd8c095, x, 0.075, z, 9));
   }
-  for (let i = 0; i < 44; i++) {
+  // a flower border along the near side (the part of the world seen at every level start)
+  for (let x = -(hw + 8); x <= hw + 8; x += K.rnd(1.7, 2.6)) {
+    const z = hd + K.rnd(2.2, 3.6);
+    K.add(flowerClump(K, K.rnd(0.7, 1.05), K.pick(FLOWER)), x, 0, z);
+    K.claim(x, z, 0.8);
+  }
+  for (let i = 0; i < 30; i++) {
     const [x, z] = K.around(1.8, 20, 16);
     if (!K.free(x, z, 0.9) || Math.abs(z - pathZ - Math.sin(x * 0.12) * 1.4) < 1.8) continue;
     K.add(flowerClump(K, K.rnd(0.7, 1.1), K.pick(FLOWER)), x, 0, z);
@@ -1261,7 +1333,7 @@ function picnic(K) {
     if (Math.abs(z - pathZ - Math.sin(x * 0.12) * 1.4) < 1.4) continue;
     K.flat.push(disc(0.14, K.pick([0xffffff, 0xffffff, 0xfff27a, 0xffb3d1]), x, 0.09, z, 5));
   }
-  for (let i = 0; i < 150; i++) {
+  for (let i = 0; i < 110; i++) {
     const [x, z] = K.around(1.6, 24, 16);
     if (Math.abs(z - pathZ - Math.sin(x * 0.12) * 1.4) < 1.5) continue;
     K.add(tuft(K, K.rnd(0.6, 1.0), 0x5aa844), x, 0, z);
@@ -1277,12 +1349,12 @@ function picnic(K) {
   K.meshes.push(km);
   K.tick.push((t) => { km.rotation.z = Math.sin(t * 1.3) * 0.18; km.position.y = 9.5 + Math.sin(t * 0.9) * 0.5; km.position.x = hw + 9 + Math.sin(t * 0.5) * 0.8; });
   const span = hw + 70, cl = [];
-  for (let i = 0; i < 7; i++) cl.push([K.rnd(-span, span), K.rnd(7.5, 11), -(hd + K.rnd(14, 34)), K.rnd(1.6, 2.6)]);
+  for (let i = 0; i < 5; i++) cl.push([K.rnd(-span, span), K.rnd(7.5, 11), -(hd + K.rnd(14, 34)), K.rnd(1.6, 2.6)]);
   cloudLayer(K, cl, span);
 }
 function duck(body) {
   const beak = 0xff9a2e;
-  return [egg(0.8, 0.5, 0.55, body, 0, 0.32, 0, 12, 8), ballC(0.36, body, 0.62, 0.8, 0, 1), egg(0.26, 0.09, 0.15, beak, 0.98, 0.76, 0, 8, 5),
+  return [egg(0.8, 0.5, 0.55, body, 0, 0.32, 0, 10, 6), ballC(0.36, body, 0.62, 0.8, 0, 1), egg(0.26, 0.09, 0.15, beak, 0.98, 0.76, 0, 6, 4),
     egg(0.3, 0.2, 0.2, body, -0.72, 0.6, 0, 8, 6), ballC(0.06, INK, 0.82, 0.92, 0.2, 0), ballC(0.06, INK, 0.82, 0.92, -0.2, 0)];
 }
 
@@ -1303,13 +1375,13 @@ function garden(K) {
   // Stepping stones: from the near rail toward the camera, and from the far rail to the gate.
   const stones = (x0, z0, dir, n) => {
     for (let i = 0; i < n; i++) {
-      const x = x0 + Math.sin(i * 0.9) * 0.6, z = z0 + dir * i * 1.75, r = K.rnd(0.62, 0.8);
-      G.push(cyl(r, r * 1.05, 0.14, K.pick([0xc9c4bb, 0xd6d1c7, 0xbdb7ad]), x, 0, z, 10));
-      K.blob(x, 0.015, z, r * 1.3, r * 1.3, 0.2);
+      const x = x0 + Math.sin(i * 0.9) * 0.55, z = z0 + dir * i * 1.55, r = K.rnd(0.5, 0.66);
+      G.push(...put([cyl(r, r * 1.06, 0.13, K.pick([0xcfc9bf, 0xd8d3c9, 0xc4beb3]), 0, 0, 0, 9)], x, 0, z, K.R() * TAU, [K.rnd(1.0, 1.3), 1, K.rnd(0.8, 1.0)]));
+      K.blob(x, 0.015, z, r * 1.25, r * 1.1, 0.18);
     }
   };
-  stones(0, hd + 1.9, 1, 12);
-  stones(0, -(hd + 1.9), -1, 6);
+  stones(0, hd + 1.9, 1, 13);
+  stones(0, -(hd + 1.9), -1, 7);
 
   // Raised flowerbeds in two rows on the near side (low), split for the path.
   const bed = (x0, x1, z, d) => {
@@ -1373,20 +1445,20 @@ function garden(K) {
   K.add(greenhouse(K), ghX, 0, -(hd + 7.6));
   K.blob(ghX + 0.4, 0.015, -(hd + 7.6), 5.0, 3.8, 0.32);
   G.push(...picketFence(-(hw + 15), fz, -1.9, fz), ...picketFence(1.9, fz, hw + 15, fz));
-  for (const s of [-1, 1]) G.push(...picketFence(s * (hw + 15), fz, s * (hw + 15), hd + 7));
+  for (const s of [-1, 1]) G.push(...picketFence(s * (hw + 15), fz, s * (hw + 15), hd * 0.4));
   for (let x = -(hw + 15); x < hw + 15; x += 2.5) K.blob(x, 0.015, fz + 0.35, 1.3, 0.5, 0.25);
   K.add(roseArch(K), 0, 0, fz);
 
   // Beyond the fence: trees and soft hills.
-  for (let x = -(hw + 26); x <= hw + 26; x += K.rnd(4, 6.5)) {
+  for (let x = -(hw + 26); x <= hw + 26; x += K.rnd(5, 7.5)) {
     const z = fz - K.rnd(3.5, 10), s = K.rnd(0.85, 1.3);
-    const t = K.R() < 0.35 ? pineTree(K, 8 * s, 2.4 * s, K.pick([0x3f9a55, 0x358a4c])) : roundTree(K, 7.5 * s, 2.6 * s, K.pick([0x5cbf55, 0x4fb04f, 0x6ccb5e]));
+    const t = K.R() < 0.35 ? pineTree(K, 8 * s, 2.4 * s, K.pick([0x3f9a55, 0x358a4c])) : (Math.abs(x) > hw + 6 ? farTree(K, 7.5 * s, 2.6 * s, K.pick([0x5cbf55, 0x4fb04f])) : roundTree(K, 7.5 * s, 2.6 * s, K.pick([0x5cbf55, 0x4fb04f, 0x6ccb5e])));
     K.add(t, x, 0, z, K.R() * TAU);
     K.blob(x + 0.6, 0.015, z + 0.4, 2.8 * s, 2.4 * s, 0.35);
   }
-  for (const s of [-1, 1]) for (let i = 0; i < 5; i++) {
+  for (const s of [-1, 1]) for (let i = 0; i < 4; i++) {
     const x = s * (hw + K.rnd(19, 30)), z = K.rnd(-(hd + 8), hd + 8), sc = K.rnd(0.8, 1.2);
-    K.add(roundTree(K, 7 * sc, 2.4 * sc, K.pick([0x5cbf55, 0x4fb04f])), x, 0, z, K.R() * TAU);
+    K.add(farTree(K, 7 * sc, 2.4 * sc, K.pick([0x5cbf55, 0x4fb04f])), x, 0, z, K.R() * TAU);
     K.blob(x + 0.5, 0.015, z + 0.4, 2.7 * sc, 2.3 * sc, 0.35);
   }
   for (let i = 0; i < 12; i++) {
@@ -1395,7 +1467,7 @@ function garden(K) {
     K.matte.push(h);
   }
   const span = hw + 70, cl = [];
-  for (let i = 0; i < 6; i++) cl.push([K.rnd(-span, span), K.rnd(7.5, 11), fz - K.rnd(6, 26), K.rnd(1.6, 2.5)]);
+  for (let i = 0; i < 4; i++) cl.push([K.rnd(-span, span), K.rnd(7.5, 11), fz - K.rnd(6, 26), K.rnd(1.6, 2.5)]);
   cloudLayer(K, cl, span);
 }
 function bedAlongZ(K, x, z0, len, d, wood, soil) {
@@ -1433,7 +1505,7 @@ function shed(K) {
   p.push(box(2.0, 3.8, 0.12, 0x7fc8a8, -1.2, 0, D / 2 + 0.06), vdisc(0.45, 0xbfe8ff, -1.2, 3.0, D / 2 + 0.14, 12), ballC(0.13, GOLD, -0.45, 1.9, D / 2 + 0.2, 1));
   p.push(box(1.8, 1.5, 0.12, WHITE, 1.7, 2.3, D / 2 + 0.06), box(1.5, 1.2, 0.08, 0xbfe8ff, 1.7, 2.45, D / 2 + 0.11), box(2.1, 0.5, 0.6, 0x9a6a42, 1.7, 1.75, D / 2 + 0.35));
   for (let i = 0; i < 4; i++) p.push(ballC(0.26, K.pick(FLOWER), 1.0 + i * 0.47, 2.35, D / 2 + 0.4, 0));
-  p.push(...put(wheelbarrow(), W / 2 + 2.2, 0, 1.5, -0.6));
+  p.push(...put(wheelbarrow(), -W / 2 - 1.6, 0, 1.2, 0.5, 0.7));
   shadeY(p.slice(0, 1), 0, H, 0.85, 1.02);
   return p;
 }
@@ -1481,7 +1553,7 @@ function roseArch(K) {
 // ============================================================== BEACH
 function beach(K) {
   const { hw, hd } = K;
-  K.shadow = 0x9a6a3a;
+  K.shadow = 0x9a6a3a; K.surroundY = -1.5;
   const G = K.glossy;
   const SH = -(hd + 7.5);
   const shoreAt = (x) => SH + Math.sin(x * 0.11 + 0.7) * 1.2 + Math.sin(x * 0.047 + 2.1) * 1.6;
@@ -1548,9 +1620,9 @@ function beach(K) {
   G.push(torus(0.6, 0.18, 0xff5a5f, pierX + 1.72, 2.0, p1 + 6, 0, 14));
   for (let z = p1 + 1; z < p0; z += 3) K.blob(pierX, 0.03, z + 0.6, 2.2, 1.6, 0.18);
   // Rocks at the waterline.
-  for (const x of [-(hw + 6), hw * 0.35, -(hw * 0.5), hw + 18, -(hw + 22)]) {
-    const z = shoreAt(x) + 0.5;
-    for (let k = 0; k < 4; k++) G.push(ballC(K.rnd(0.5, 1.1), K.pick([0xb9b0a3, 0xa79e92, 0xcbc3b6]), x + K.rnd(-1.4, 1.4), 0.25, z + K.rnd(-0.8, 0.8), 1, 0.6));
+  for (const x of [-(hw + 6), hw * 0.45, hw + 19, -(hw + 23)]) {
+    const z = shoreAt(x) + 1.0;
+    for (let k = 0; k < 3; k++) G.push(ballC(K.rnd(0.3, 0.6), K.pick([0xd2c6b2, 0xc4b8a4, 0xe0d6c4]), x + K.rnd(-0.9, 0.9), 0.08, z + K.rnd(-0.5, 0.5), 1, 0.55));
   }
 
   // Near side, all low: towels with a hat and flip-flops, footprints, a little sand mound.
@@ -1559,15 +1631,22 @@ function beach(K) {
     cols.forEach((c, i) => p.push(rectXZ(-1.4, 1.4, -2.4 + i * (4.8 / cols.length), -2.4 + (i + 1) * (4.8 / cols.length), 0.03, c)));
     return p;
   };
-  K.add({ s: towel([0xff6f9c, 0xffffff, 0xff6f9c, 0xffffff, 0xff6f9c, 0xffffff]) }, -hw * 0.55, 0, hd + 4.6, 0.25);
-  K.add({ s: towel([0x4fa3ff, 0xffe27a, 0x4fa3ff, 0xffe27a, 0x4fa3ff]) }, hw * 0.5, 0, hd + 5.2, -0.3);
-  K.add([dome(0.75, 0.55, 0.75, 0xffe08a, 0, 0.05, 0, 14, 4), disc(1.4, 0xffe08a, 0, 0.06, 0, 18), torus(0.78, 0.08, 0xff6f9c, 0, 0.12, 0, PI / 2, 16)], -hw * 0.55 + 0.4, 0, hd + 3.6);
-  for (const dx of [-0.35, 0.35]) K.add([egg(0.28, 0.06, 0.6, 0x4fa3ff, 0, 0.06, 0, 8, 4), torus(0.18, 0.04, WHITE, 0, 0.12, -0.2, PI / 2, 8)], hw * 0.5 + dx + 0.6, 0, hd + 3.4, 0.2);
-  let fx = -(hw + 2), fzz = hd + 15;
-  for (let i = 0; i < 26; i++) {
-    const a = Math.atan2(-(fzz - (hd + 2.2)), hw * 0.2 - fx) + Math.sin(i * 0.5) * 0.25;
+  const tx = Math.max(3.6, hw * 0.5);
+  K.add({ s: towel([0xff6f9c, 0xffffff, 0xff6f9c, 0xffffff, 0xff6f9c, 0xffffff]) }, -tx, 0, hd + 4.9, 0.3, 0.8);
+  K.add({ s: towel([0x4fa3ff, 0xffe27a, 0x4fa3ff, 0xffe27a, 0x4fa3ff]) }, tx, 0, hd + 5.4, -0.35, 0.8);
+  K.add([dome(0.62, 0.45, 0.62, 0xffe08a, 0, 0.05, 0, 14, 4), disc(1.15, 0xffe08a, 0, 0.06, 0, 18), torus(0.65, 0.07, 0xff6f9c, 0, 0.11, 0, PI / 2, 16)], -tx + 0.3, 0, hd + 4.0);
+  for (const dx of [-0.3, 0.3]) K.add([egg(0.24, 0.05, 0.5, 0x4fa3ff, 0, 0.06, 0, 8, 4), torus(0.15, 0.035, WHITE, 0, 0.11, -0.17, PI / 2, 8)], tx + dx + 0.4, 0, hd + 3.9, 0.2);
+  // A heart drawn in the sand, with a trail of footprints walking up to it.
+  const hcx = 0, hcz = hd + 9.0, hs = 1.25;
+  for (let i = 0; i < 64; i++) {
+    const t = (i / 64) * TAU, x = 16 * Math.pow(Math.sin(t), 3), y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+    K.flat.push(disc(0.2, 0xd2ae70, hcx + x * 0.1 * hs, 0.02, hcz - y * 0.1 * hs, 7));
+  }
+  let fx = -(hw + 3), fzz = hd + 15;
+  for (let i = 0; i < 30; i++) {
+    const a = Math.atan2(hcz + 1.2 - fzz, hcx - 2.4 - fx) + Math.sin(i * 0.55) * 0.22;
     fx += Math.cos(a) * 0.9; fzz += Math.sin(a) * 0.9;
-    if (fzz < hd + 2.2) break;
+    if (Math.hypot(fx - hcx + 2.4, fzz - hcz - 1.2) < 1.2) break;
     const side = i % 2 ? 1 : -1, ox = -Math.sin(a) * 0.25 * side, oz = Math.cos(a) * 0.25 * side;
     K.flat.push(disc(0.2, 0xd8b679, fx + ox, 0.02, fzz + oz, 7, 1, 1.6, -a + PI / 2));
   }
@@ -1586,13 +1665,13 @@ function beach(K) {
     bm.rotation.z = Math.sin(t * 1.1) * 0.05; bm.rotation.x = Math.sin(t * 0.8 + 1) * 0.03;
   });
   const uT = { value: 0 }, gl = [];
-  [[7.5, 0.0, 8.2], [9.5, 2.0, 8.8], [6.0, 3.4, 9.4], [11, 4.6, 8.0]].forEach(([r, a, y], i) => {
+  [[7.5, 0.0, 5.6], [9.5, 2.0, 6.2], [6.0, 3.4, 6.8], [11, 4.6, 5.2]].forEach(([r, a, y], i) => {
     const g = gull();
     setFlap(g, (x, yy, z) => clamp01((Math.abs(z) - 0.25) / 1.4), i * 1.7);
-    gl.push(...put(g, Math.cos(a) * r, y, Math.sin(a) * r, PI / 2 - a, 1.25));
+    gl.push(...put(g, Math.cos(a) * r, y, Math.sin(a) * r, PI / 2 - a, 0.85));
   });
   const gm = new THREE.Mesh(merge(gl), flapMaterial(uT, 7.5, 0.45));
-  gm.name = 'gulls'; gm.position.set(hw * 0.2, 0, SH + 1.5);
+  gm.name = 'gulls'; gm.position.set(hw * 0.2, 0, SH - 2.5);
   K.meshes.push(gm);
   K.tick.push((t) => { uT.value = t; gm.rotation.y = t * 0.32; });
   const span = hw + 70, cl = [];
@@ -1719,6 +1798,6 @@ export function buildBackdrop(worldKey, arena, root) {
   // Tabletop worlds drop the surround to their room floor; outdoor/floor worlds tuck it
   // just under the ground decals so nothing z-fights at a distance.
   const sur = surroundOf(root);
-  if (sur) sur.position.y = K.floorY - 0.05;
+  if (sur) sur.position.y = K.surroundY ?? K.floorY - 0.05;
   return finish(K, root);
 }
