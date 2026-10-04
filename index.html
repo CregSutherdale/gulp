@@ -10,7 +10,7 @@
 <link rel="icon" href="icon-180.png">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap" media="print" onload="this.media='all'">
 <style>:root {
   --ink: #2b2141; --ink2: #5b4f78; --paper: #ffffff; --cream: #fff8ef;
   --pink: #ff5fa2; --pink-d: #d93f80; --sun: #ffc93c; --sun-d: #e0a316; --mint: #2fd39a; --mint-d: #1fa877;
@@ -157,7 +157,12 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #ffe3ee; tou
 .loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 18px; background: linear-gradient(180deg, #ffd6e7, #ffe9c7); z-index: 50; transition: opacity .5s; }
 .loading .hole { width: 90px; height: 90px; border-radius: 50%; background: radial-gradient(circle, #1a1030 60%, var(--pink) 63%, var(--pink) 76%, transparent 78%); animation: gulp 1.2s ease-in-out infinite; }
 .loading p { margin: 0; font-size: 22px; font-weight: 600; color: var(--pink-d); }
-@media (prefers-reduced-motion: reduce) { * { animation-duration: .01s !important; } }
+/* Reduce Motion: keep every message readable (no fly-ins, no endless pulsing). */
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01s !important; animation-iteration-count: 1 !important; transition-duration: .01s !important; }
+  .count span, .banner, .pop, .toast, .chip.bump, .helper.fire { animation: none !important; }
+  .banner { opacity: 1; }
+}
 
 /* helpers (boosters) */
 .helpers { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(14px + var(--safe-b)); display: flex; gap: 12px; pointer-events: none; }
@@ -211,6 +216,9 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #ffe3ee; tou
 
 .introtime { margin: 16px 0 18px !important; display: flex; justify-content: center; gap: 14px; align-items: center; }
 .introtime .par { color: #c58a00; font-weight: 700; background: #fff5d6; border-radius: 12px; padding: 3px 10px; font-size: 15px; }
+
+/* hints wrap on narrow phones instead of running off both edges */
+.hint { white-space: normal !important; width: max-content; max-width: calc(100vw - 32px); text-align: center; line-height: 1.3; }
 </style>
 </head><body>
 <canvas id="c"></canvas>
@@ -219,6 +227,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #ffe3ee; tou
 <div id="ui"></div>
 <canvas id="confetti"></canvas>
 <div id="loading" class="loading"><div class="hole"></div><p>Getting hungry…</p></div>
-<script>window.__GULP_BUILD='ff3796dbd4';</script>
-<script src="game.ff3796dbd4.js" defer></script>
+<script>window.__GULP_BUILD='37dc6044ed';</script>
+<script>function gulpLoadFailed(){var l=document.getElementById('loading');if(l){l.innerHTML='<div class="hole"></div><p>Couldn't load the game.<br>Tap to try again.</p>';l.onclick=function(){location.reload();};}}</script>
+<script src="game.37dc6044ed.js" defer onerror="gulpLoadFailed()"></script>
 </body></html>
