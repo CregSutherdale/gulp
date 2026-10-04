@@ -6,7 +6,8 @@
 //   at     start (default: [0, d/2-3]) | far | near | left | right | center | farleft | farright
 //   hx, hz explicit look point (overrides `at`)
 //   r      hole radius (default 0.5). Without `dist`, the camera distance comes from the
-//          game's own camTarget() formula for that radius.
+//          game's own camTarget() formula for that radius (incl. the 70%-of-board minimum).
+//   at=overview | overview_end   the level intro / outro framing
 //   dist   camera distance override (the brief's "15" start view and "40" big-hole view)
 //   t      freeze animation at this time in seconds (default: live)
 //   props  0 hides the sample arena props   stats 0 hides the overlay
@@ -40,6 +41,9 @@ const t0 = performance.now();
 const def = buildArena(world, { w: W, d: D }, root, patchGround);
 const buildMs = performance.now() - t0;
 const backdrop = def.backdrop;
+// ?hide=gulls,clouds hides backdrop meshes by name (debugging).
+const hide = (q.get('hide') || '').split(',').filter(Boolean);
+root.traverse((m) => { if (m.isMesh && hide.includes(m.name)) m.visible = false; });
 
 // Look point.
 const AT = {
@@ -51,15 +55,25 @@ let [hx, hz] = AT[q.get('at')] || AT.start;
 if (q.has('hx')) hx = +q.get('hx');
 if (q.has('hz')) hz = +q.get('hz');
 
-// Camera exactly like Round.camTarget().
+const holeX = hx, holeZ = hz;
+
+// Camera exactly like Round.camTarget(): levels keep >= 70% of the board width in view;
+// at=overview / overview_end reproduce the intro and end-of-level framing (pitch 62).
 const cam = renderer.camera;
 let dist = +(q.get('dist') || 0);
-if (!dist) {
+const tanV = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)), tanHfull = tanV * cam.aspect;
+let pitchDeg = 56;
+const ov = q.get('at') === 'overview' || q.get('at') === 'overview_end';
+if (ov) {
+  dist = dist || Math.max((W / 2 + 1.5) / tanHfull, (D * 0.5 + 1.5) / tanV * 0.62) * 1.05;
+  pitchDeg = 62; hx = 0; hz = q.get('at') === 'overview' ? D * 0.3 : 0;
+} else if (!dist) {
   const share = THREE.MathUtils.lerp(0.23, 0.15, Math.min(1, (r - 0.5) / 6));
-  const tanH = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) * Math.min(cam.aspect, 1.1);
-  dist = Math.max(11, r / (share * tanH));
+  const tanH = tanV * Math.min(cam.aspect, 1.1);
+  const minD = (W * 0.7 / 2) / tanH;
+  dist = Math.max(minD, r / (share * tanH));
 }
-const pitch = THREE.MathUtils.degToRad(56);
+const pitch = THREE.MathUtils.degToRad(pitchDeg);
 cam.position.set(hx, dist * Math.sin(pitch), hz + dist * Math.cos(pitch));
 cam.lookAt(hx, 0, hz);
 renderer.followSun(hx, hz);
@@ -68,9 +82,9 @@ renderer.setShadowSpan(Math.max(18, cam.position.y * 1.1));
 // The player's hole.
 const hole = makeHoleMesh(new THREE.Color(theme.accent).getHex());
 hole.scale.setScalar(r);
-hole.position.set(hx, 0, hz);
+hole.position.set(holeX, 0, holeZ);
 renderer.scene.add(hole);
-holeUniform.value[0].set(hx, hz, r, 1);
+holeUniform.value[0].set(holeX, holeZ, r, 1);
 
 // Backdrop stats: every mesh the backdrop added to root (root.children[0] is the arena group).
 function backdropStats() {
@@ -101,7 +115,7 @@ async function addProps() {
     for (let z = -D / 2 + 1.5; z <= D / 2 - 1.5; z += gap) {
       for (let x = -W / 2 + 1.5; x <= W / 2 - 1.5; x += gap) {
         const px = x + (R() - 0.5) * 0.8, pz = z + (R() - 0.5) * 0.8;
-        if (Math.hypot(px - hx, pz - hz) < r + 1.2) continue;
+        if (Math.hypot(px - holeX, pz - holeZ) < r + 1.2) continue;
         if (R() < 0.45) continue;
         spots.push([px, pz]);
       }

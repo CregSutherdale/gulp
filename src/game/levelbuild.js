@@ -168,5 +168,8 @@ export function buildArena(world, arena, root, patchGround) {
     g.add(m);
   }
   root.add(g);
-  return { ...W, backdrop: buildBackdrop(world, arena, root) };
+  // Scenery is decoration: if it ever fails, the level must still load.
+  let backdrop = null;
+  try { backdrop = buildBackdrop(world, arena, root); } catch (e) { console.error('backdrop', e); }
+  return { ...W, backdrop };
 }

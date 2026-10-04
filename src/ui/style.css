@@ -144,7 +144,12 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #ffe3ee; tou
 .loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 18px; background: linear-gradient(180deg, #ffd6e7, #ffe9c7); z-index: 50; transition: opacity .5s; }
 .loading .hole { width: 90px; height: 90px; border-radius: 50%; background: radial-gradient(circle, #1a1030 60%, var(--pink) 63%, var(--pink) 76%, transparent 78%); animation: gulp 1.2s ease-in-out infinite; }
 .loading p { margin: 0; font-size: 22px; font-weight: 600; color: var(--pink-d); }
-@media (prefers-reduced-motion: reduce) { * { animation-duration: .01s !important; } }
+/* Reduce Motion: keep every message readable (no fly-ins, no endless pulsing). */
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01s !important; animation-iteration-count: 1 !important; transition-duration: .01s !important; }
+  .count span, .banner, .pop, .toast, .chip.bump, .helper.fire { animation: none !important; }
+  .banner { opacity: 1; }
+}
 
 /* helpers (boosters) */
 .helpers { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(14px + var(--safe-b)); display: flex; gap: 12px; pointer-events: none; }
@@ -198,3 +203,6 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #ffe3ee; tou
 
 .introtime { margin: 16px 0 18px !important; display: flex; justify-content: center; gap: 14px; align-items: center; }
 .introtime .par { color: #c58a00; font-weight: 700; background: #fff5d6; border-radius: 12px; padding: 3px 10px; font-size: 15px; }
+
+/* hints wrap on narrow phones instead of running off both edges */
+.hint { white-space: normal !important; width: max-content; max-width: calc(100vw - 32px); text-align: center; line-height: 1.3; }

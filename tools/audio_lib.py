@@ -72,10 +72,12 @@ def true_peak_db(x, sr, os=4):
 
 
 def k_weight(x, sr):
+    """K-weighting (BS.1770 pre-filter), applied along TIME for each channel."""
+    from scipy.signal import lfilter
     m = pyln.Meter(sr)
     y = x.astype(np.float64).copy()
-    for f in m._filters.values():  # high_shelf then high_pass (K-weighting)
-        y = f.apply_filter(y)
+    for f in m._filters.values():  # high_shelf then high_pass
+        y = lfilter(f.b, f.a, y, axis=0)
     return y
 
 

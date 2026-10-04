@@ -28,7 +28,11 @@ export class UI {
   show(el) { this.clear(); this.screen.append(el); this.focusFirst(el); return el; }
   focusFirst(el) { const b = el.querySelector('[data-focus]') || el.querySelector('.btn'); if (b && matchMedia('(pointer:fine)').matches) b.focus({ preventScroll: true }); }
   on(el, sel, fn) {
-    el.querySelectorAll(sel).forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); this.audio.tap(); fn(b, e); }));
+    el.querySelectorAll(sel).forEach((b) => b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      fn(b, e);
+      try { this.audio.tap(); } catch (err) { /* sound is optional */ }
+    }));
   }
 
   // ------------------------------------------------------------ title
@@ -145,23 +149,25 @@ export class UI {
 
   updateHud(round, cam) {
     const e = this.hudEls; if (!e) return;
+    const set = (el, key, v, fn) => { if (el[key] !== v) { el[key] = v; fn(v); } };
     if (e.timer) {
-      e.timer.textContent = fmt(round.left);
+      set(e.timer, '_t', fmt(round.left), (v) => { e.timer.textContent = v; });
       const frozen = round.boost && round.boost.freezeT > 0;
       e.timer.classList.toggle('frozen', !!frozen);
       e.timer.classList.toggle('low', !frozen && round.left <= 10 && round.kind === 'level');
     }
     if (e.meter) {
       const p = Math.min(100, Math.floor(round.progress() * 100));
-      e.meter.style.width = p + '%'; e.meterT.textContent = `${p}% eaten`;
+      set(e.meter, '_p', p, (v) => { e.meter.style.width = v + '%'; e.meterT.textContent = `${v}% eaten`; });
       const h = round.player, lv = round.sizeLevel(h);
-      e.lv.textContent = lv;
+      set(e.lv, '_v', lv, (v) => { e.lv.textContent = v; });
       const lo = 0.5 * Math.pow(1.22, lv - 1), hi = lo * 1.22;
-      e.bar.style.width = Math.min(100, ((h.target - lo) / (hi - lo)) * 100) + '%';
+      set(e.bar, '_w', Math.round(Math.min(100, ((h.target - lo) / (hi - lo)) * 100)), (v) => { e.bar.style.width = v + '%'; });
     }
     if (e.board) {
       const st = round.standings().slice(0, 5);
-      e.board.innerHTML = st.map((h) => `<div class="${h.isPlayer ? 'me' : ''}"><i style="background:${cssColor(h.color)}"></i>${h.name}<b>${Math.round(h.score)}</b></div>`).join('');
+      const html = st.map((h) => `<div class="${h.isPlayer ? 'me' : ''}"><i style="background:${cssColor(h.color)}"></i>${h.name}<b>${Math.round(h.score)}</b></div>`).join('');
+      set(e.board, '_h', html, (v) => { e.board.innerHTML = v; });
       // name tags over every hole
       for (const h of round.holes) {
         let l = this.labels.get(h);

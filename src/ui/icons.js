@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import { PROPS, buildGeometry } from '../game/props.js';
 import { patchProps } from '../engine/render.js';
 
+const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
 export class Icons {
   constructor() {
     this.cache = new Map();
@@ -23,7 +25,13 @@ export class Icons {
   get(id, tint = 0) {
     const key = `${id}:${tint}`;
     if (this.cache.has(key)) return this.cache.get(key);
+    // Icons are a nicety: if the icon renderer can't run (iOS dropped its WebGL
+    // context, out of memory...) show a blank image and try again next time.
+    try { return this.render(id, tint, key); } catch (e) { console.error('icon', e); this.r = null; return BLANK; }
+  }
+  render(id, tint, key) {
     this.ensure();
+    if (this.r.getContext().isContextLost()) { this.r = null; return BLANK; }
     const prop = PROPS[id];
     const geo = buildGeometry(prop, 0);
     const mesh = new THREE.InstancedMesh(geo, this.mat, 1);

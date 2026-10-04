@@ -19,7 +19,15 @@ import { Sparkles, makeProgressRing, Markers } from './engine/fx.js';
 const canvas = document.getElementById('c');
 const renderer = new Renderer(canvas);
 const input = new Input(document.getElementById('touch'), document.getElementById('stick'));
-const audio = new AudioMod.Audio();
+// Every sound call goes through this guard: sound is a nicety and must never be
+// able to break a frame, an event, or a button.
+const audio = new Proxy(new AudioMod.Audio(), {
+  get(t, k) {
+    const v = t[k];
+    if (typeof v !== 'function') return v;
+    return (...a) => { try { return v.apply(t, a); } catch (e) { console.error('audio', k, e); return undefined; } };
+  },
+});
 // Bridge: the per-world music keys need the new sound engine (it exports CREDITS).
 // Until it lands, map them onto the two original tracks so music never goes silent.
 const playMusic = (k) => audio.playMusic(AudioMod.CREDITS ? k : (k === 'menu' || k === 'zen' ? 'calm' : 'play'));
@@ -46,7 +54,7 @@ save.eaten = save.eaten || {};
 function newRound(opts) {
   // One physics world for the whole session; each round removes every body it made.
   // (Freeing and recreating Rapier worlds trips a wasm ownership error.)
-  if (round) round.dispose();
+  if (round) { const old = round; round = null; old.dispose(); }
   if (!phys) phys = new PhysicsWorld();
   ui.hideHud();
   const skin = skinById(save.skin);
@@ -180,7 +188,7 @@ const events = {
     running = false; audio.timeUp(); ui.hideHud();
     ui.timeUp({
       round: r,
-      onMore: () => { ui.clear(); ui.hudLevel(r, pause); r.addTime(30); running = true; },
+      onMore: () => { ui.clear(); ui.hudLevel(r, pause, helpers, useHelper); r.addTime(30); running = true; },
       onRetry: () => startLevel(levelIdx),
       onMap: () => showMap(),
     });
@@ -315,6 +323,10 @@ function padMenus() {
 // ---------------------------------------------------------------- loop
 let last = performance.now();
 function frame(now) {
+  requestAnimationFrame(frame);
+  try { step(now); } catch (e) { console.error(e); }
+}
+function step(now) {
   const dt = Math.min(1 / 30, (now - last) / 1000); last = now;
   if (round) {
     if (running) round.update(dt, input.poll());
@@ -334,7 +346,7 @@ function frame(now) {
       u.uColor.value.copy(p.mesh.userData.rimMat.color);
     }
     sparkles.update(dt);
-    round.world.backdrop?.update?.(now / 1000);
+    try { round.world.backdrop?.update?.(now / 1000); } catch (e) { console.error('backdrop', e); round.world.backdrop = null; }
     // Bouncing arrows over the last few targets so stragglers are easy to find.
     if (running && round.kind === 'level') {
       round.markT = (round.markT || 0) - dt;
@@ -344,7 +356,7 @@ function frame(now) {
     } else markers.update([], 0);
     if (running) {
       hudT -= dt;
-      if (hudT <= 0 || round.kind !== 'race') { ui.updateHud(round, renderer.camera); hudT = 0.2; }
+      ui.updateHud(round, renderer.camera); // cheap now: DOM only changes when a value does
       if (round.kind === 'level' && round.left <= 10) {
         const s = Math.ceil(round.left);
         if (s !== tickSec) { tickSec = s; audio.tick(s <= 5); }
@@ -358,7 +370,6 @@ function frame(now) {
   if (running || demo) renderer.watchPerf(Math.min(0.1, (now - (frame.prev || now)) / 1000));
   frame.prev = now;
   renderer.render();
-  requestAnimationFrame(frame);
 }
 
 // ---------------------------------------------------------------- boot
@@ -371,8 +382,9 @@ async function boot() {
   loading.style.opacity = 0; setTimeout(() => loading.remove(), 600);
   // iOS: audio can only start inside a user gesture.
   const unlock = () => { audio.unlock(); if (audio.want) audio.playMusic(audio.want); };
-  addEventListener('pointerdown', unlock, { capture: true });
-  addEventListener('keydown', unlock, { capture: true });
+  for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) addEventListener(ev, unlock, { capture: true });
+  // Ask the browser to keep her progress (Safari can clear site data after 7 idle days).
+  navigator.storage?.persist?.().catch?.(() => {});
   document.addEventListener('visibilitychange', () => { if (document.hidden) { if (running) pause(); if (saveDirty) { writeSave(save); saveDirty = false; } } });
   // Offline + instant relaunch on the real site (not the dev server).
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});

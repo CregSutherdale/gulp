@@ -27,7 +27,9 @@ const res = await esbuild.build({
   define: { 'process.env.NODE_ENV': '"production"' },
 });
 const js = res.outputFiles[0].text;
-const hash = crypto.createHash('sha1').update(js).digest('hex').slice(0, 10);
+const css = fs.readFileSync('src/ui/style.css', 'utf8');
+// The hash covers the page CSS too, so a style-only change still ships a new worker.
+const hash = crypto.createHash('sha1').update(js).update(css).digest('hex').slice(0, 10);
 const jsName = `game.${hash}.js`;
 
 // Empty dist/ (not delete it: a local test server may be serving from it).
@@ -37,7 +39,6 @@ fs.writeFileSync(`dist/${jsName}`, js);
 if (fs.existsSync('public')) fs.cpSync('public', 'dist', { recursive: true }); // music etc.
 for (const f of ['icon-180.png', 'icon-512.png']) fs.copyFileSync(`assets/icons/${f}`, `dist/${f}`);
 
-const css = fs.readFileSync('src/ui/style.css', 'utf8');
 const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
@@ -50,7 +51,7 @@ const html = `<!doctype html>
 <link rel="icon" href="icon-180.png">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap" media="print" onload="this.media='all'">
 <style>${css}</style>
 </head><body>
 <canvas id="c"></canvas>
@@ -60,7 +61,8 @@ const html = `<!doctype html>
 <canvas id="confetti"></canvas>
 <div id="loading" class="loading"><div class="hole"></div><p>Getting hungry…</p></div>
 <script>window.__GULP_BUILD='${hash}';</script>
-<script src="${jsName}" defer></script>
+<script>function gulpLoadFailed(){var l=document.getElementById('loading');if(l){l.innerHTML='<div class="hole"></div><p>Couldn't load the game.<br>Tap to try again.</p>';l.onclick=function(){location.reload();};}}</script>
+<script src="${jsName}" defer onerror="gulpLoadFailed()"></script>
 </body></html>
 `;
 fs.writeFileSync('dist/index.html', html);
@@ -76,17 +78,27 @@ fs.writeFileSync('dist/manifest.webmanifest', JSON.stringify({
 // caches are dropped on activate.
 const sw = `const V='gulp-${hash}';
 const CORE=['./','./${jsName}','./manifest.webmanifest','./icon-180.png'];
+// Install caches the page and its game file TOGETHER, so the cached pair always matches.
 self.addEventListener('install',e=>{e.waitUntil(caches.open(V).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting()));});
-self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==V).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
+// Only ever delete this game's old caches (the github.io domain is shared).
+self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k.startsWith('gulp-')&&k!==V).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
 self.addEventListener('fetch',e=>{
   const r=e.request; if(r.method!=='GET') return;
   const u=new URL(r.url); if(u.origin!==location.origin) return;
   if(r.mode==='navigate'){
-    e.respondWith(fetch(r).then(res=>{const c=res.clone();caches.open(V).then(x=>x.put('./',c));return res;}).catch(()=>caches.match('./')));
+    // Fresh page when the network answers quickly; otherwise the cached page (the
+    // cached page always has its matching game file cached alongside it).
+    e.respondWith((async()=>{
+      const cached=await caches.match('./');
+      const net=fetch(r).catch(()=>null);
+      if(!cached){const res=await net;return res||new Response('<p style="font:20px system-ui;padding:40px">You are offline. Connect once to download Gulp!</p>',{headers:{'Content-Type':'text/html'}});}
+      const res=await Promise.race([net,new Promise(ok=>setTimeout(()=>ok(null),3000))]);
+      return (res&&res.ok)?res:cached;
+    })());
     return;
   }
-  if(/\\/game\\.[0-9a-f]+\\.js$/.test(u.pathname)){
-    e.respondWith(caches.match(r).then(m=>m||fetch(r).then(res=>{const c=res.clone();caches.open(V).then(x=>x.put(r,c));return res;})));
+  if(/^game\.[0-9a-f]+\.js$/.test(u.pathname.slice(u.pathname.lastIndexOf('/')+1))){
+    e.respondWith(caches.match(r).then(m=>m||fetch(r).then(res=>{if(res.ok){const c=res.clone();caches.open(V).then(x=>x.put(r,c));}return res;})));
     return;
   }
   e.respondWith(caches.open(V).then(c=>c.match(r).then(m=>{const net=fetch(r).then(res=>{if(res.ok)c.put(r,res.clone());return res;}).catch(()=>m);return m||net;})));

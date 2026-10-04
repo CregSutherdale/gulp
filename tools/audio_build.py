@@ -43,6 +43,18 @@ TP_PRE = -2.6         # pre-codec true-peak ceiling (dBTP)
 TP_MAX = -1.5         # final, post-codec true-peak ceiling (dBTP)
 BITRATE = "64k"
 
+
+def _runtime_music_db():
+    """The music bus level audio.js applies at runtime (parsed so the two never drift)."""
+    try:
+        m = re.search(r"const MUSIC_DB = (-?[0-9.]+)", open(AUDIO_JS, encoding="utf-8").read())
+        return float(m.group(1)) if m else 0.0
+    except OSError:
+        return 0.0
+
+
+MUSIC_DB_RUNTIME = _runtime_music_db()
+
 HG_PACK = "28 High Quality 16-bit RPG Music"
 HG_LICENSE = "HydroGene, free for any use, credit optional (hydrogene.itch.io/high-quality-16-bit-music)"
 MAGO_PACK = "Fantasy Exploration"
@@ -130,17 +142,41 @@ def find_loop(x, sr, lmin, lmax):
     return best
 
 
-def refine(x, sr, a, b, search=0.05, win=0.15):
-    """Sample-align loop start `a` to end `b` (seconds) by waveform cross-correlation."""
+def _onset_env(s, hop=128):
+    S = np.log1p(200 * A.stft_mag(s.astype(np.float32), 1024, hop))
+    e = np.maximum(0, np.diff(S, axis=0)).sum(axis=1)
+    return e - e.mean()
+
+
+def refine(x, sr, a, b, rhythm_search=0.08, wave_search=0.004, win=4.0):
+    """Sample-align loop start `a` to end `b` (seconds).
+
+    Stage 1 (rhythm): align the onset patterns in +-4 s around both points, so the beat
+    never stumbles at the seam. Stage 2 (phase): +-4 ms waveform cross-correlation on the
+    low band so the crossfade sums without comb filtering. Returns (ia, ib, rhythm_corr).
+    """
+    from scipy.signal import butter, sosfiltfilt
     m = x.mean(axis=1)
-    ib, w, s = int(b * sr), int(win * sr), int(search * sr)
-    ref = m[ib - w: ib + w]
-    ia = int(a * sr)
-    seg = m[ia - w - s: ia + w + s]
+    ia, ib, hop = int(a * sr), int(b * sr), 128
+    w = int(win * sr)
+    eb = _onset_env(m[ib - w: ib + w], hop)
+    best, best_l = -1e9, 0
+    for lag in range(-int(rhythm_search * sr / hop), int(rhythm_search * sr / hop) + 1):
+        o = lag * hop
+        ea = _onset_env(m[ia + o - w: ia + o + w], hop)
+        n = min(len(ea), len(eb))
+        c = float(np.dot(ea[:n], eb[:n]) / (np.linalg.norm(ea[:n]) * np.linalg.norm(eb[:n]) + 1e-12))
+        if c > best:
+            best, best_l = c, o
+    ia += best_l
+    lo = sosfiltfilt(butter(4, 1500, fs=sr, output="sos"), m)
+    ww, s = int(0.15 * sr), int(wave_search * sr)
+    ref = lo[ib - ww: ib + ww]
+    seg = lo[ia - ww - s: ia + ww + s]
     cc = np.correlate(seg, ref, mode="valid")
     norm = np.sqrt(np.convolve(seg ** 2, np.ones(len(ref)), mode="valid") * np.sum(ref ** 2)) + 1e-12
     k = int(np.argmax(cc / norm))
-    return (ia - s + k), ib, float((cc / norm)[k])
+    return ia - s + k, ib, best, float((cc / norm)[k])
 
 
 def build_loop(x, sr, spec):
@@ -157,12 +193,19 @@ def build_loop(x, sr, spec):
             body[-n:, c] += d * r
         return body, info
     sim, a, L = find_loop(x, sr, *spec["search"])
-    ia, ib, xc = refine(x, sr, a, a + L)
-    F = int(0.08 * sr)
+    ia, ib, rc, xc = refine(x, sr, a, a + L)
+    F = int(0.12 * sr)
     body = x[ia:ib].copy()
-    r = (1 - np.cos(np.linspace(0, np.pi, F)))[:, None] / 2  # raised cosine, sums to 1
-    body[-F:] = x[ib - F: ib] * (1 - r) + x[ia - F: ia] * r
-    return body, {"start": ia / sr, "src_end": ib / sr, "sim": sim, "xcorr": xc}
+    out_seg, in_seg = x[ib - F: ib], x[ia - F: ia]
+    # Correlation-aware crossfade: g_out^2 + g_in^2 + 2*rho*g_out*g_in = 1 at every point,
+    # so the seam neither dips (uncorrelated) nor bumps (correlated).
+    rho = float(np.sum(out_seg * in_seg) / (np.sqrt(np.sum(out_seg ** 2) * np.sum(in_seg ** 2)) + 1e-12))
+    rho = min(1.0, max(0.0, rho))
+    th = np.linspace(0, np.pi / 2, F)
+    ga, gb = np.cos(th), np.sin(th)
+    nrm = np.sqrt(ga ** 2 + gb ** 2 + 2 * rho * ga * gb)
+    body[-F:] = out_seg * (ga / nrm)[:, None] + in_seg * (gb / nrm)[:, None]
+    return body, {"start": ia / sr, "src_end": ib / sr, "sim": sim, "xcorr": xc, "rhythm": rc, "rho": rho}
 
 
 # ----------------------------------------------------------------------------- level
@@ -217,7 +260,11 @@ def key_of(body, sr):
 
 
 def seam_novelty(body, sr):
-    """Spectral-flux at the loop seam vs the loop's own 99th percentile (1.0 = typical)."""
+    """Spectral flux at the loop seam vs the loop's own 99.9th percentile.
+
+    <= ~1.5 means the seam is no bigger a change than the music's own strongest note or
+    chord onsets; a cut or click would read 3+.
+    """
     w = int(0.75 * sr)
     seg = np.concatenate([body[-w:], body[:w]]).mean(axis=1)
     whole = cyc(body, int(0.1 * sr)).mean(axis=1)
@@ -228,7 +275,7 @@ def seam_novelty(body, sr):
     f_all = flux(whole)
     f_seam = flux(seg)
     mid = len(f_seam) // 2
-    return float(f_seam[mid - 3: mid + 4].max() / np.percentile(f_all, 99))
+    return float(f_seam[mid - 3: mid + 4].max() / np.percentile(f_all, 99.9))
 
 
 def main():
@@ -261,7 +308,7 @@ def main():
                 filebuf = np.concatenate([body[-p:], body, body[:p]])
                 encode(filebuf, out, meta)
                 y, lf, tp = measure_file(out)
-                if tp <= TP_MAX - 0.05 and abs(lf - TARGET_LUFS) <= 0.5:
+                if tp <= TP_MAX - 0.05 and abs(lf - TARGET_LUFS) <= 0.15:
                     break
                 if tp > TP_MAX - 0.05:  # codec overshoot: tighten the limiter and retry
                     ceiling -= (tp - TP_MAX) + 0.3
@@ -273,7 +320,7 @@ def main():
         print(f"{t['id']:<22} loop {L / SR:7.3f}s  src {info['start']:7.3f}->{info['src_end']:7.3f}s"
               f"  gain {g_db:+5.1f} dB  key {A.NOTE_NAMES[tonic]}{'' if mode == 'maj' else 'm'}"
               f" (SFX root {A.NOTE_NAMES[root]}, tune {tuning:+.0f}c)  seam-novelty {nov:.2f}"
-              + (f"  sim {info['sim']:.3f} xcorr {info['xcorr']:.3f}" if info["sim"] else "")
+              + (f"  sim {info['sim']:.3f} rhythm {info['rhythm']:.2f} phase {info['xcorr']:.2f} rho {info['rho']:.2f}" if info["sim"] else "")
               + (f"\n{'':<22} -> {os.path.basename(out)}  {res['size'] / 1024:6.0f} KB  {res['lufs']:6.2f} LUFS"
                  f"  {res['tp']:5.2f} dBTP  decoded {res['n_dec']} / expected {res['n_exp']} samples"
                  if not dry else ""), flush=True)

@@ -104,7 +104,8 @@ export class Round {
     this.moveHoles(dt, input);
     this.updateZones(dt);
     this.updateNPCs(dt);
-    this.phys.step();
+    const steps = Math.max(1, Math.min(2, Math.round(dt * 60)));
+    for (let i = 0; i < steps; i++) this.phys.step();
     this.checkEaten(dt);
     this.checkHoleVsHole();
     this.world.sync(dt);
@@ -177,6 +178,7 @@ export class Round {
   // Decide which objects stand on which hole's ring (and so can fall in).
   updateZones(dt) {
     const best = new Map();
+    const wob = []; // too-big objects to jiggle AFTER the query (Rapier forbids mutation inside it)
     const w = this.phys.world;
     const rot = { x: 0, y: 0, z: 0, w: 1 };
     for (const h of this.holes) {
@@ -188,7 +190,7 @@ export class Round {
         const t = o.body.translation();
         const d = Math.hypot(t.x - h.x, t.z - h.z);
         if (!this.fits(o, h)) {
-          if (d < h.r * 0.95) this.wobble(o, h, dt);
+          if (d < h.r * 0.95) wob.push(o, h);
           return true;
         }
         const score = d / h.r;
@@ -197,6 +199,7 @@ export class Round {
         return true;
       });
     }
+    for (let i = 0; i < wob.length; i += 2) this.wobble(wob[i], wob[i + 1], dt);
     for (const [o] of this.zoneOf) if (!best.has(o) && o.captured < 0 && !o.eaten) this.world.setOnGround(o);
     this.zoneOf = best;
     for (const [o, z] of best) {
@@ -523,7 +526,13 @@ export class Round {
       this.phys.world.removeRigidBody(h.ring.body);
     }
     for (const o of this.world.objects) if (!o.eaten) this.phys.remove(o.body);
-    this.world.root.traverse((m) => { if (m.geometry) m.geometry.dispose(); if (m.material?.map) m.material.map.dispose(); });
+    const free = (root) => root.traverse((m) => {
+      m.geometry?.dispose();
+      for (const mat of [].concat(m.material || [])) { mat.map?.dispose(); mat.dispose(); }
+      m.dispose?.(); // InstancedMesh frees its instance buffers
+    });
+    free(this.world.root);
+    for (const h of this.holes) free(h.mesh);
     for (const v of holeUniform.value) v.set(0, 0, 0, 0);
   }
 }
