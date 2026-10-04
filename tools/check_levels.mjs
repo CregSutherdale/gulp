@@ -14,6 +14,7 @@
 // what the game spawns. Prop ids are checked for collisions across ALL prop files.
 // Exits non-zero on any failure.
 import { build } from 'esbuild';
+import * as DIFF from '../src/game/difficulty.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -269,13 +270,16 @@ function checkSeason(S) {
       maxFit = Math.max(maxFit, PROPS[t.id].fit);
       tdesc.push(`${t.n === 'all' ? m.length : t.n} ${t.id}${t.tint !== undefined ? `/${t.tint}` : ''}`);
     }
-    const G = GROW * (S.grow || 1); // the player's growth rate this season is checked at
+    // Default difficulty is CHALLENGE (src/game/difficulty.js): check every board at the growth
+    // the player really gets there, with 30% spare filler (the table was built to that margin).
+    const G = GROW * (DIFF.GROW_BY_LEVEL[L.id] ?? DIFF.CHALLENGE_GROW);
+    const margin = 1.29;
     const fill = objs.filter((o) => !isT(o)).sort((a, b) => a.prop.fit - b.prop.fit);
     let mass = 0, r = R0, idx = 0;
     while (idx < fill.length && fill[idx].prop.fit <= FIT * 2 * r) { mass += fill[idx].prop.value; r = Math.sqrt(R0 * R0 + G * mass); idx++; }
     const need = needFor(maxFit, G);
     const ratio = need > 0 ? mass / need : Infinity;
-    if (ratio < S.margin) fail(where, `filler reaches value ${mass}, largest target (fit ${maxFit}) needs ${need.toFixed(0)} x ${S.margin}`);
+    if (ratio < margin) fail(where, `filler reaches value ${mass}, largest target (fit ${maxFit}) needs ${need.toFixed(0)} x ${margin}`);
     // whole-level greedy: everything should be edible eventually (soft)
     const all = [...objs].sort((a, b) => a.prop.fit - b.prop.fit);
     let m2 = 0, r2 = R0, j2 = 0;
