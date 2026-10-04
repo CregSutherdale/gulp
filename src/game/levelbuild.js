@@ -134,6 +134,37 @@ export const WORLDS = {
   },
 };
 
+
+// ---- Season 2 worlds
+Object.assign(WORLDS, {
+  candy: {
+    label: 'Candy Land', sky: 0xffe0f3, hemiSky: 0xfff4fb, hemiGround: 0xf3c4e4, surround: 0xffc8e8, wall: 0xffffff, accent: '#ff6ec7',
+    tile: 4, floor: (x, w, h) => {
+      // diagonal candy stripes
+      x.fillStyle = '#fff1f8'; x.fillRect(0, 0, w, h);
+      x.save(); x.translate(w / 2, h / 2); x.rotate(-Math.PI / 4); x.translate(-w, -h);
+      for (let i = 0; i < 12; i++) { x.fillStyle = i % 2 ? '#ffd3ec' : '#d8f5ec'; x.fillRect(i * w / 3, 0, w / 6, h * 2); }
+      x.restore();
+      noise(x, w, h, 6);
+    },
+  },
+  farm: {
+    label: 'Sunny Farm', sky: 0xd4f0ff, hemiSky: 0xf3fbff, hemiGround: 0xb8d38a, surround: 0x92c461, wall: 0xb07a4a, accent: '#7cc35a',
+    tile: 4, floor: (x, w, h) => {
+      for (let i = 0; i < 8; i++) { x.fillStyle = i % 2 ? '#a5d66f' : '#9acd65'; x.fillRect(0, i * h / 8, w, h / 8); }
+      for (let i = 0; i < 700; i++) { x.fillStyle = `rgba(${70 + Math.random() * 40},${140 + Math.random() * 50},50,.35)`; x.fillRect(Math.random() * w, Math.random() * h, 2, 4); }
+    },
+  },
+  snow: {
+    label: 'Snowy Village', sky: 0xdcefff, hemiSky: 0xf6fbff, hemiGround: 0xcfdcee, surround: 0xe9f3ff, wall: 0xffffff, accent: '#6fb7ff',
+    tile: 4, floor: (x, w, h) => {
+      x.fillStyle = '#f7fbff'; x.fillRect(0, 0, w, h);
+      noise(x, w, h, 10);
+      for (let i = 0; i < 260; i++) { x.fillStyle = `rgba(170,205,255,${0.25 + Math.random() * 0.35})`; const r = 1 + Math.random() * 2; x.beginPath(); x.arc(Math.random() * w, Math.random() * h, r, 0, 6.3); x.fill(); }
+    },
+  },
+});
+
 export function buildArena(world, arena, root, patchGround) {
   const W = WORLDS[world];
   const g = new THREE.Group();

@@ -186,10 +186,22 @@ const CANDIDATES = [
 ];
 const exe = CANDIDATES.find((p) => fs.existsSync(p));
 if (!exe) { console.error('no Chrome/Edge found'); process.exit(2); }
+// Sweep temp profiles left by earlier runs (Windows can hold a lock briefly after exit).
+for (const d of fs.readdirSync(os.tmpdir()).filter((x) => x.startsWith('gulp-audio-chrome-'))) {
+  try { fs.rmSync(path.join(os.tmpdir(), d), { recursive: true, force: true }); } catch (e) { /* still locked: next run */ }
+}
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'gulp-audio-chrome-'));
 const chrome = spawn(exe, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`,
   '--no-first-run', '--no-default-browser-check', '--autoplay-policy=no-user-gesture-required',
-  '--disable-gpu', '--mute-audio', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+  '--disable-gpu', '--mute-audio', '--disable-component-update', '--disable-background-networking',
+  '--disable-extensions', '--disable-sync', '--no-pings', '--disable-default-apps', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+const chromeExited = new Promise((r) => chrome.once('exit', r));
+// Kill the whole browser tree, wait for it to really exit, then remove the temp profile.
+async function shutdown() {
+  killChrome();
+  await Promise.race([chromeExited, new Promise((r) => setTimeout(r, 5000))]);
+  try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 40, retryDelay: 200 }); } catch (e) { console.warn(`note: temp profile still locked (${e.code}); the next run sweeps it`); }
+}
 const killChrome = () => {
   try { if (process.platform === 'win32') execSync(`taskkill /PID ${chrome.pid} /T /F`, { stdio: 'ignore' }); else chrome.kill('SIGKILL'); } catch (e) { /* gone */ }
 };
@@ -285,8 +297,7 @@ if (LIVE) {
     console.log(`live: console errors/warnings about audio: ${errs.length ? errs.join(' | ') : 'none'}`);
     if (errs.length || s1.state !== 'running' || !s1.src.length || !music.length || before.ctxs) code = 1;
   } catch (e) { console.error('LIVE ERROR', e.message); code = 1; }
-  ws.close(); server.close(); killChrome();
-  try { fs.rmSync(profile, { recursive: true, force: true }); } catch (e) { /* locked briefly */ }
+  ws.close(); server.close(); await shutdown();
   console.log(`LIVE RESULT: ${code ? 'problems' : 'ok'}`);
   process.exit(code);
 }
@@ -329,6 +340,8 @@ SFX.push({ name: 'storm (worst case)', dur: 3.2, ev: JSON.stringify([
   [0, 'win'], [0, 'sizeUp'], [0, 'swallowedHole'], [0, 'reward'],
   ...Array.from({ length: 12 }, (_, i) => [i * 0.02, 'pop', { id: ['stove', 'bus', 'gingerhouse', 'dollhouse'][i % 4], value: 40 }, i + 1]),
 ]) });
+// a run of Gulp Book discoveries: one fanfare, then light dings (no machine-gun fanfares)
+SFX.push({ name: 'reward x6 in 3s', dur: 4.2, ev: JSON.stringify(Array.from({ length: 6 }, (_, i) => [i * 0.5, 'reward'])) });
 // rate limits: rimWobble x10 over 2 s must sound only a few times
 SFX.push({ name: 'rimWobble x10 in 2s', dur: 2.6, ev: JSON.stringify(Array.from({ length: 10 }, (_, i) => [i * 0.2, 'rimWobble'])) });
 
@@ -387,8 +400,7 @@ try {
   if (consoleLines.length) console.error(consoleLines.join('\n'));
   fail++;
 } finally {
-  ws.close(); server.close(); killChrome();
-  try { fs.rmSync(profile, { recursive: true, force: true }); } catch (e) { /* locked briefly */ }
+  ws.close(); server.close(); await shutdown();
 }
 console.log(`\nRESULT: ${fail ? fail + ' problem(s)' : 'all checks passed'}`);
 process.exit(fail ? 1 : 0);

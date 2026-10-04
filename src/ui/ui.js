@@ -24,8 +24,18 @@ export class UI {
     this.labels = new Map();
     this.hintT = 0;
   }
-  clear() { this.screen.innerHTML = ''; }
-  show(el) { this.clear(); this.screen.append(el); this.focusFirst(el); return el; }
+  // Panels get a soft open/close sound (optional chaining: sound is never required).
+  clear(silent = false) {
+    if (!silent && this.screen.querySelector('.panel')) this.audio.uiClose?.();
+    this.screen.innerHTML = '';
+  }
+  show(el) {
+    this.clear(true);
+    this.screen.append(el);
+    if (el.querySelector('.panel')) this.audio.uiOpen?.();
+    this.focusFirst(el);
+    return el;
+  }
   focusFirst(el) { const b = el.querySelector('[data-focus]') || el.querySelector('.btn'); if (b && matchMedia('(pointer:fine)').matches) b.focus({ preventScroll: true }); }
   on(el, sel, fn) {
     el.querySelectorAll(sel).forEach((b) => b.addEventListener('click', (e) => {
@@ -68,11 +78,12 @@ export class UI {
     const unlockedUpTo = (() => { let i = 0; while (i < levels.length && save.stars[levels[i].id]) i++; return i; })();
     const el = $(`<div class="screen" style="background:linear-gradient(180deg,#ff9cc6,#ffd59e)">
       <div class="maptop"><button class="btn ghost round" data-a="back" aria-label="Back">‹</button><h2>Levels</h2><div class="starcount">★ ${stars}</div></div>
-      ${byWorld.map((w) => {
+      ${byWorld.map((w, wi) => {
         const W = WORLDS[w.world];
+        const season2 = w.list[0].id >= 31 && (wi === 0 || byWorld[wi - 1].list[0].id < 31);
         const ic = w.list[0].targets[0];
         const got = w.list.reduce((a, l) => a + (save.stars[l.id] || 0), 0);
-        return `<div class="world" style="--wc:${W.accent}"><h3><img class="wicon" alt="" src="${this.icons.get(ic.id, ic.tint ?? 0)}">${W.label}<span class="wstars">★ ${got}/${w.list.length * 3}</span></h3><div class="lvls">
+        return `${season2 ? '<div class="season">✨ Season 2 ✨</div>' : ''}<div class="world" style="--wc:${W.accent}"><h3><img class="wicon"  alt="" src="${this.icons.get(ic.id, ic.tint ?? 0)}">${W.label}<span class="wstars">★ ${got}/${w.list.length * 3}</span></h3><div class="lvls">
           ${w.list.map((l) => {
             const idx = levels.indexOf(l), got = save.stars[l.id] || 0, locked = idx > unlockedUpTo;
             const st = got ? '★'.repeat(got) + '☆'.repeat(3 - got) : '';
@@ -248,7 +259,7 @@ export class UI {
         <div class="row" style="flex-wrap:nowrap"><button class="btn sky small" data-a="export" style="flex:1">Copy my progress</button><button class="btn ghost small" data-a="import" style="flex:1">Paste progress</button></div>
         <textarea class="code hidden" id="xfercode" rows="3" spellcheck="false" aria-label="Progress code"></textarea>
         <div class="xmsg"></div></div>
-      <div class="credits">${credits || 'Music by HydroGene.'}<br>Made with love for Amanda by Creg.</div>
+      <div class="credits">${String(credits || 'Music by HydroGene.').replace(/&/g, '&amp;').replace(/</g, '&lt;').split('\n').join('<br>')}<br>Made with love for Amanda by Creg.</div>
       <div class="col" style="margin-top:16px"><button class="btn mint" data-a="back" data-focus>Done</button></div></div></div>`);
     this.bindToggles(el, onToggle); this.on(el, '[data-a=back]', onBack);
     const box = el.querySelector('#xfercode'), msg = el.querySelector('.xmsg');

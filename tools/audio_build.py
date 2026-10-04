@@ -1,7 +1,8 @@
 """Build Gulp!'s per-world music loops: pick -> loop -> normalize -> encode -> verify.
 
-    python tools/audio_build.py            # build every track into public/music/
-    python tools/audio_build.py --dry      # analyze + report only, write nothing
+    python tools/audio_build.py              # build every track into public/music/
+    python tools/audio_build.py --dry        # analyze + report only, write nothing
+    python tools/audio_build.py --keys-only  # rewrite only the key table in audio.js (no re-encode)
 
 Pipeline per track (all classic DSP, no ML):
   1. Decode the licensed source at 48 kHz stereo (soxr resampler).
@@ -35,7 +36,10 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 OUT_DIR = os.path.join(ROOT, "public", "music")
 AUDIO_JS = os.path.join(ROOT, "src", "engine", "audio.js")
 HG = A.ALLOWED_ROOTS[0]
-MAGO = A.ALLOWED_ROOTS[1]
+# Zero-license-risk policy (2026-10-04): ship HydroGene only (free for any use, no conditions).
+# Johnathan Mago's pack may still be analysed, but is never shipped: its license bars
+# standalone redistribution, and a public web game exposes its files.
+SHIP_ROOT = HG
 SR = 48000
 PAD = 0.25            # seconds of pre/post roll around the loop
 TARGET_LUFS = -16.0
@@ -57,8 +61,6 @@ MUSIC_DB_RUNTIME = _runtime_music_db()
 
 HG_PACK = "28 High Quality 16-bit RPG Music"
 HG_LICENSE = "HydroGene, free for any use, credit optional (hydrogene.itch.io/high-quality-16-bit-music)"
-MAGO_PACK = "Fantasy Exploration"
-MAGO_LICENSE = "Johnathan Mago game music license: use in games OK, no standalone redistribution, credit appreciated"
 
 # Every track the game ships. `why` is the listening note that justified the pick.
 TRACKS = [
@@ -80,19 +82,27 @@ TRACKS = [
     dict(id="spirits_forest", title="Spirits Forest", author="HydroGene", pack=HG_PACK, lic=HG_LICENSE,
          src=HG + r"\wav\07. Spirits Forest (loop).wav", loop="file",
          why="B major, sparkly high melody (~900 Hz register), bouncy beat with kick over snare: toy-box play"),
-    dict(id="overworld_exploration", title="Overworld Exploration", author="Johnathan Mago", pack=MAGO_PACK,
-         lic=MAGO_LICENSE, src=MAGO + r"\06 Overworld Exploration.ogg", loop="auto", search=(40, 110),
-         why="D major pastoral orchestral, legato, smoothest transients: flowers and sunshine"),
-    dict(id="village_theme", title="Village Theme", author="Johnathan Mago", pack=MAGO_PACK, lic=MAGO_LICENSE,
-         src=MAGO + r"\10 Village Theme.ogg", loop="auto", search=(40, 110),
-         why="C major I-V-iii-vi-IV-ii, ~84 BPM legato strings: warm, homey kitchen"),
+    dict(id="east_town", title="East Town", author="HydroGene", pack=HG_PACK, lic=HG_LICENSE,
+         src=HG + r"\wav\19. East Town.wav", loop="file",
+         why="A minor / C major pentatonic folk tune in a high airy register (~920 Hz), ~98 BPM, light "
+             "percussion for its first 40 s: pastoral and breezy"),
+    dict(id="wood_forest_town", title="Wood Forest Town", author="HydroGene", pack=HG_PACK, lic=HG_LICENSE,
+         src=HG + r"\wav\08. Wood Forest Town.wav", loop="file",
+         why="warmest of the pack (lowest presence band), cozy bouncing town theme at ~105 BPM, soft pokes, "
+             "119 s long so the final world repeats least"),
 ]
+# (An internal loop can still be cut from any track with loop="auto", search=(min_s, max_s).)
 
-# Game key -> track id. Tracks repeat where a pair of keys wants the same mood.
+# Game key -> track id. Tracks repeat where keys want the same mood (each sharing group is
+# listed in tools/audio_check.py SHARED_OK).
 KEYMAP = {
     "menu": "peaceful_village", "zen": "holy_sanctuary", "race": "traveling_the_sky",
     "bakery": "lively_city", "picnic": "long_journey", "playroom": "spirits_forest",
-    "garden": "overworld_exploration", "beach": "traveling_the_sky", "kitchen": "village_theme",
+    "garden": "east_town", "beach": "traveling_the_sky", "kitchen": "wood_forest_town",
+    # Season 2 (2026-10-04): reuse beat every unused HydroGene candidate on fit.
+    "candy": "lively_city",       # sugary, playful, bouncy: the most major (78%) bouncy-staccato track
+    "farm": "long_journey",       # rustic, cheerful, morning: F major sunny stroll, smoothest transients
+    "snow": "holy_sanctuary",     # cozy winter, gentle: beatless warm shimmering pads, no pokes
 }
 # Extra names the runtime accepts (old main.js keys + the town world).
 ALIASES = {"calm": "menu", "play": "bakery", "city": "bakery", "title": "menu", "map": "menu"}
@@ -278,13 +288,43 @@ def seam_novelty(body, sr):
     return float(f_seam[mid - 3: mid + 4].max() / np.percentile(f_all, 99.9))
 
 
+def keys_only():
+    """Regenerate only the key table: reuse each track's measured loop/key data from audio.js
+    (no decoding or re-encoding, so the shipped .m4a files stay byte-identical)."""
+    src = open(AUDIO_JS, encoding="utf-8").read()
+    have = {m.group(1): m for m in re.finditer(
+        r"  (\w+): \{ len: ([\d.]+), root: (\d+), cents: (-?[\d.]+), title: '([^']*)', author: '([^']*)' \},", src)}
+    rows = []
+    for t in TRACKS:
+        m = have.get(t["id"])
+        if not m or not os.path.exists(os.path.join(OUT_DIR, t["id"] + ".m4a")):
+            sys.exit(f"--keys-only: {t['id']} has no built file or table entry; run a full build")
+        rows.append(dict(id=t["id"], L=float(m.group(2)), root=int(m.group(3)), tuning=float(m.group(4)),
+                         title=t["title"], author=t["author"]))
+    ids = {t["id"] for t in TRACKS}
+    bad = {k: v for k, v in KEYMAP.items() if v not in ids}
+    if bad:
+        sys.exit(f"--keys-only: keys point at tracks that are not built: {bad}")
+    write_js_table(rows)
+    print("keys: " + ", ".join(f"{k}={v}" for k, v in KEYMAP.items()))
+
+
 def main():
+    if "--keys-only" in sys.argv:
+        return keys_only()
     dry = "--dry" in sys.argv
     os.makedirs(OUT_DIR, exist_ok=True)
     rows = []
+    for t in TRACKS:  # refuse before touching anything
+        if not A.provenance_ok(t["src"]) or not t["src"].lower().startswith(SHIP_ROOT.lower()):
+            sys.exit(f"REFUSED: {t['src']} is not in the HydroGene pack (ship policy)")
+    if not dry:  # prune files that are no longer in the track list
+        keep = {t["id"] + ".m4a" for t in TRACKS}
+        for f in sorted(os.listdir(OUT_DIR)):
+            if f.endswith(".m4a") and f not in keep:
+                os.remove(os.path.join(OUT_DIR, f))
+                print(f"removed {f} (no longer shipped)")
     for t in TRACKS:
-        if not A.provenance_ok(t["src"]):
-            sys.exit(f"REFUSED: {t['src']} is outside the licensed packs")
         x = A.decode(t["src"], SR, 2)
         body, info = build_loop(x, SR, t)
         L = len(body)
@@ -342,7 +382,9 @@ def write_js_table(rows):
                      f"title: '{r['title']}', author: '{r['author']}' }},")
     lines.append("};")
     lines.append("const MUSIC_KEYS = {")
-    lines.append("  " + ", ".join(f"{k}: '{v}'" for k, v in KEYMAP.items()) + ",")
+    items = list(KEYMAP.items())
+    for i in range(0, len(items), 4):  # four keys per line
+        lines.append("  " + ", ".join(f"{k}: '{v}'" for k, v in items[i:i + 4]) + ",")
     lines.append("  // aliases: old main.js keys and the town world")
     lines.append("  " + ", ".join(f"{k}: '{KEYMAP[v]}'" for k, v in ALIASES.items()) + ",")
     lines.append("};")

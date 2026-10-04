@@ -1,6 +1,6 @@
 // Gulp! audio engine.
 //
-// MUSIC: eight licensed loops (HydroGene + Johnathan Mago), one per world or mode. Each
+// MUSIC: eight licensed HydroGene loops (free for any use), one per world or mode. Each
 // is fetched lazily from `music/<id>.m4a` (Vite serves public/ at the site root), decoded
 // once, cached (small LRU), looped sample-accurately over [PAD, PAD + len) and
 // crossfaded on every change. The files carry 0.25 s of the loop's own continuation on
@@ -28,11 +28,13 @@ const MUSIC = {
   lively_city: { len: 64.616083, root: 0, cents: -0.9, title: 'Lively City', author: 'HydroGene' },
   long_journey: { len: 45.700896, root: 5, cents: 2.0, title: 'Long Journey', author: 'HydroGene' },
   spirits_forest: { len: 54.638396, root: 11, cents: 0.1, title: 'Spirits Forest', author: 'HydroGene' },
-  overworld_exploration: { len: 81.593583, root: 2, cents: 0.9, title: 'Overworld Exploration', author: 'Johnathan Mago' },
-  village_theme: { len: 68.884604, root: 0, cents: 5.6, title: 'Village Theme', author: 'Johnathan Mago' },
+  east_town: { len: 58.776792, root: 0, cents: 1.5, title: 'East Town', author: 'HydroGene' },
+  wood_forest_town: { len: 118.852688, root: 6, cents: -1.6, title: 'Wood Forest Town', author: 'HydroGene' },
 };
 const MUSIC_KEYS = {
-  menu: 'peaceful_village', zen: 'holy_sanctuary', race: 'traveling_the_sky', bakery: 'lively_city', picnic: 'long_journey', playroom: 'spirits_forest', garden: 'overworld_exploration', beach: 'traveling_the_sky', kitchen: 'village_theme',
+  menu: 'peaceful_village', zen: 'holy_sanctuary', race: 'traveling_the_sky', bakery: 'lively_city',
+  picnic: 'long_journey', playroom: 'spirits_forest', garden: 'east_town', beach: 'traveling_the_sky',
+  kitchen: 'wood_forest_town', candy: 'lively_city', farm: 'long_journey', snow: 'holy_sanctuary',
   // aliases: old main.js keys and the town world
   calm: 'peaceful_village', play: 'lively_city', city: 'lively_city', title: 'peaceful_village', map: 'peaceful_village',
 };
@@ -42,9 +44,9 @@ export { MUSIC_KEYS };
 
 export const CREDITS = [
   'Music',
-  '"Peaceful Village", "Holy Sanctuary", "Traveling the Sky", "Lively City", "Long Journey" and "Spirits Forest"',
-  'by HydroGene, from "28 High Quality 16-bit RPG Music" (hydrogene.itch.io).',
-  '"Overworld Exploration" and "Village Theme" by Johnathan Mago, from "Fantasy Exploration".',
+  '"Peaceful Village", "Holy Sanctuary", "Traveling the Sky", "Lively City", "Long Journey",',
+  '"Spirits Forest", "East Town" and "Wood Forest Town" by HydroGene,',
+  'from "28 High Quality 16-bit RPG Music" (hydrogene.itch.io).',
   'Sound effects synthesized in the game.',
 ].join('\n');
 
@@ -118,16 +120,18 @@ const MATERIAL_OF = {
   teapot: 'ceramic', toaster: 'metal', pan: 'metal', fruitbowl: 'ceramic', mixer: 'metal',
   fridge: 'metal', stove: 'metal',
 };
+// Fallback rules, first match wins (food and fruit before critters, so "hotdog" and
+// "mango" don't turn into a person).
 const MATERIAL_RULES = [
-  [/person|kid|man|woman|dog|cat|bird|crab|frog|bunny|chick|critter/, 'person'],
-  [/car$|bus|truck|van|taxi|tractor|scooter|bike|moped/, 'vehicle'],
-  [/cake|cupcake|donut|pie|bun|bread|cream|jelly|pudding|muffin|sandwich|marshmallow|gum|mushroom/, 'squishy'],
+  [/car$|bus$|truck|van$|taxi|tractor|scooter|bike|moped/, 'vehicle'],
+  [/cake|donut|pie$|bun$|bread|cream|jelly|pudding|muffin|sandwich|marshmallow|gum|mushroom|hotdog|burger/, 'squishy'],
   [/cookie|candy|cracker|chip|toast|pretzel|crisp|waffle|biscuit|crayon|sand/, 'crunchy'],
-  [/apple|orange|banana|grape|berry|cherry|lemon|lime|melon|peach|pear|plum|fruit|pumpkin|tomato|carrot/, 'fruit'],
-  [/cup|mug|plate|bowl|jar|bottle|vase|teapot|glass|pot|gnome|shell|fountain/, 'ceramic'],
-  [/pan|can|kettle|spoon|fork|toaster|fridge|stove|oven|lamp|sign|metal|robot|bell|hydrant|tin/, 'metal'],
-  [/bench|chair|table|box|crate|house|fence|tree|log|basket|block|horse|barrel|train|wood/, 'wood'],
-  [/teddy|plush|pillow|cushion|blanket|towel|bush|hedge|flower|tulip|daisy|rose|grass|leaf|star/, 'soft'],
+  [/apple|orange|banana|grape|berry|cherry|lemon|lime|melon|mango|peach|pear|plum|fruit|pumpkin|tomato|carrot/, 'fruit'],
+  [/cup$|mug|plate|bowl|jar|bottle|vase|teapot|glass|pot$|gnome|shell|fountain/, 'ceramic'],
+  [/pan$|kettle|spoon|fork|toaster|fridge|stove|oven|lamp|sign|metal|robot|bell|hydrant|tincan|canister/, 'metal'],
+  [/bench|chair|table|box|crate|house|fence|tree|log$|basket|block|horse|barrel|train|wood/, 'wood'],
+  [/teddy|plush|pillow|cushion|blanket|towel|bush|hedge|flower|tulip|daisy|rose|grass|leaf|starfish/, 'soft'],
+  [/person|kid|dog|cat$|kitten|puppy|bird|crab|frog|bunny|chick|critter/, 'person'],
 ];
 export const MATERIALS = ['soft', 'squishy', 'crunchy', 'plastic', 'wood', 'metal', 'ceramic', 'fruit', 'person', 'vehicle'];
 export function materialOf(prop) {
@@ -373,6 +377,7 @@ export class Audio {
     this.popClock = 0; this.popTimes = []; this.popN = 0;
     this.lastGulp = -1; this.lastHorn = -1; this.lastWobble = -9; this.wobbles = [];
     this.duckEnd = 0; this.duckDepth = 1;
+    this.lastReward = -9; this.lastDing = -9;
     this.rng = Math.random;
     this._setKey(MUSIC.peaceful_village.root, MUSIC.peaceful_village.cents);
   }
@@ -409,6 +414,7 @@ export class Audio {
     // clocks are in this context's time
     this.voices = []; this.popClock = 0; this.popTimes = []; this.track = null;
     this.lastGulp = -1; this.lastHorn = -1; this.lastWobble = -9; this.wobbles = []; this.duckEnd = 0; this.duckDepth = 1;
+    this.lastReward = -9; this.lastDing = -9;
     // master: limiter (safety) + makeup compensation, so unity in = unity out below threshold
     this.master = c.createGain();
     this.limiter = comp(c, LIMIT);
@@ -721,7 +727,7 @@ export class Audio {
   target(progress = 0) { // a target item eaten: an in-key chime that climbs with progress
     if (!this._live()) return;
     const t = this.ctx.currentTime + 0.012, v = new Voice(this, t, { kind: 'target', send: 0.22 });
-    const n = 2 + Math.round(clamp(progress, 0, 1) * 4);
+    const n = 2 + Math.round(clamp(progress, 0, 1) * 3); // mi, sol, la ... the last one resolves to do
     bell(this, v, t, { f: this.deg(n), ratio: 3.5, index: 0.8, d: 0.7, vol: 0.13 });
     osc(this, v, t, { f: this.deg(n), a: 0.004, d: 0.5, vol: 0.06 });
     osc(this, v, t + 0.06, { f: fold(this.deg(n, 1), 2400), a: 0.004, d: 0.35, vol: 0.025 });
@@ -872,9 +878,22 @@ export class Audio {
     v.done();
     this.duck(-4, 0.8, 0.6);
   }
-  reward() { // something unlocked: "ta-da!"
+  // Something unlocked or a new item for the book: "ta-da!". Discoveries can arrive in
+  // runs (a new world full of new things), so it paces itself: the full fanfare at most
+  // once per 3.5 s of quiet, and a light two-bell "ding-ding" (no music duck) in between.
+  reward() {
     if (!this._live()) return;
-    const t = this.ctx.currentTime + 0.005, v = new Voice(this, t, { kind: 'reward', send: 0.22 });
+    const now = this.ctx.currentTime, recent = now - this.lastReward < 3.5;
+    this.lastReward = now;
+    if (recent) {
+      if (now - this.lastDing < 0.35) return;
+      this.lastDing = now;
+      const t = now + 0.005, v = new Voice(this, t, { kind: 'reward', send: 0.25, gain: dbToGain(-4) });
+      [3, 5].forEach((n, j) => bell(this, v, t + j * 0.08, { f: this.deg(n), ratio: 3.5, index: 0.6, d: 0.5, vol: 0.09 }));
+      v.done();
+      return;
+    }
+    const t = now + 0.005, v = new Voice(this, t, { kind: 'reward', send: 0.22 });
     [2, 3, 4].forEach((n, j) => osc(this, v, t + j * 0.07, { type: 'triangle', f: this.deg(n), a: 0.005, d: 0.16, vol: 0.09, lp: 4000 }));
     const c0 = t + 0.24;
     for (const n of [0, 2, 3, 5]) {

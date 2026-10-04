@@ -5,7 +5,7 @@ import '../game/props_cozy.js';
 import { initPhysics, PhysicsWorld } from '../engine/physics.js';
 import { Renderer } from '../engine/render.js';
 import { Round } from '../game/round.js';
-import { LEVELS } from '../game/levels.js';
+import { LEVELS } from '../game/allLevels.js';
 
 const out = document.getElementById('out');
 const log = (s) => { out.textContent += s + '\n'; };

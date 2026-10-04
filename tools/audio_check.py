@@ -5,9 +5,12 @@
 
 Music (public/music/*.m4a, decoded with ffmpeg exactly as shipped):
   integrated LUFS (target -16 +-0.5), true peak (<= -1.5 dBTP), loop length, duration, size,
-  total MB (<= 6), and provenance: every file must map to a source inside the two licensed
-  packs (HydroGene 16-bit RPG Music, Johnathan Mago Fantasy Exploration) and no path may
-  mention Kenney or Sonniss.
+  total MB (<= 6), and provenance. Zero-license-risk ship policy (2026-10-04): every file must
+  map to a source in HydroGene's "28 High Quality 16-bit RPG Music" (free for any use). No other
+  file may sit in public/music, and no path may mention Kenney or Sonniss. The key map must match
+  the table generated into audio.js and include the Season 2 keys (candy, farm, snow). A track may
+  serve only one key except the sharing groups in SHARED_OK. CREDITS must name every shipped track
+  and no one who is not shipped.
 SFX (WAVs from the real engine in headless Chrome):
   peak / true peak, loudest 100 ms (K-weighted, ~perceived punch) relative to the music bed,
   brightness (spectral centroid), harsh-band share (2-5 kHz) and the sharpest attack.
@@ -21,9 +24,17 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(__file__))
 import audio_lib as A  # noqa: E402
-from audio_build import KEYMAP, MUSIC_DB_RUNTIME, OUT_DIR, TRACKS, TARGET_LUFS, TP_MAX  # noqa: E402
+from audio_build import AUDIO_JS, HG_PACK, KEYMAP, MUSIC_DB_RUNTIME, OUT_DIR, SHIP_ROOT, TRACKS, TARGET_LUFS, TP_MAX  # noqa: E402
 
 SR = 48000
+# Keys allowed to share one track (same mood family). Anything else reusing a track fails.
+SHARED_OK = {
+    frozenset(("race", "beach")),     # Traveling the Sky: fast, airy
+    frozenset(("bakery", "candy")),   # Lively City: sugary, bouncy
+    frozenset(("picnic", "farm")),    # Long Journey: sunny outdoors
+    frozenset(("zen", "snow")),       # Holy Sanctuary: gentle, still
+}
+SEASON2 = ("candy", "farm", "snow")
 
 
 def music_check():
@@ -43,6 +54,7 @@ def music_check():
         tags = {k.lower(): v for k, v in meta["format"].get("tags", {}).items()}
         st = meta["streams"][0]
         prov = bool(t) and A.provenance_ok(t["src"]) and os.path.exists(t["src"])
+        prov = prov and t["src"].lower().startswith(SHIP_ROOT.lower()) and t["pack"] == HG_PACK  # ship policy
         prov = prov and not any(w in (tags.get("comment", "") + tags.get("album", "") + tags.get("artist", "")).lower() for w in A.BANNED_WORDS)
         ok = prov and abs(lu - TARGET_LUFS) <= 0.5 and tp <= TP_MAX and st["codec_name"] == "aac" and int(st["channels"]) == 2
         fails += 0 if ok else 1
@@ -60,8 +72,46 @@ def music_check():
     fails += 0 if mb <= 6 else 1
     bad_src = [t["src"] for t in TRACKS if any(w in t["src"].lower() for w in A.BANNED_WORDS)]
     print(f"Kenney/Sonniss source paths: {len(bad_src)} {'ok' if not bad_src else 'FAIL ' + str(bad_src)}")
-    print(f"Licensed packs only: {all(A.provenance_ok(t['src']) for t in TRACKS)}")
-    return fails
+    hg_only = all(t["src"].lower().startswith(SHIP_ROOT.lower()) for t in TRACKS)
+    print(f"Ship policy, HydroGene only: {'ok' if hg_only else 'FAIL'}")
+    fails += 0 if (hg_only and not bad_src) else 1
+    return fails + map_check()
+
+
+def map_check():
+    """Key map == table generated into audio.js; no track reused across keys; CREDITS complete."""
+    import re
+    fails = 0
+    js = open(AUDIO_JS, encoding="utf-8").read()
+    block = js[js.index("const MUSIC_KEYS = {"): js.index("};", js.index("const MUSIC_KEYS = {"))]
+    gen = dict(re.findall(r"(\w+): '(\w+)'", block))
+    for k, v in KEYMAP.items():
+        if gen.get(k) != v:
+            print(f"FAIL key {k}: build map {v} != audio.js {gen.get(k)}")
+            fails += 1
+        if not os.path.exists(os.path.join(OUT_DIR, v + ".m4a")):
+            print(f"FAIL key {k}: {v}.m4a missing")
+            fails += 1
+    for k in SEASON2:
+        if k not in KEYMAP or gen.get(k) != KEYMAP.get(k):
+            print(f"FAIL Season 2 key {k} missing from the map or from audio.js")
+            fails += 1
+    users = {}
+    for k, v in KEYMAP.items():
+        users.setdefault(v, []).append(k)
+    for v, ks in users.items():
+        if len(ks) > 1 and frozenset(ks) not in SHARED_OK:
+            print(f"FAIL track {v} reused by keys {ks}")
+            fails += 1
+    print("Key map: " + ", ".join(f"{k}={v}" for k, v in KEYMAP.items()) + f"  ({'ok' if not fails else 'FAIL'})")
+    cblock = js[js.index("export const CREDITS"): js.index("].join", js.index("export const CREDITS"))]
+    missing = [t["title"] for t in TRACKS if t["title"] not in cblock]
+    authors = {t["author"] for t in TRACKS}
+    extra = [a for a in ("Mago", "Kenney", "Sonniss") if a in cblock and not any(a in x for x in authors)]
+    cred_ok = not missing and not extra and all(a in cblock for a in authors)
+    print(f"CREDITS: {'ok' if cred_ok else 'FAIL'} (names all {len(TRACKS)} tracks"
+          + (f"; missing {missing}" if missing else "") + (f"; unshipped names {extra}" if extra else "") + ")")
+    return fails + (0 if cred_ok else 1)
 
 
 def bed_loudness():
@@ -127,8 +177,27 @@ def sfx_check(d):
     return fails, rows
 
 
+def material_check():
+    """Every prop id defined in the game must have an explicit material in audio.js."""
+    import re
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    ids = []
+    for f in ("props.js", "props_cozy.js"):
+        p = os.path.join(root, "src", "game", f)
+        if os.path.exists(p):
+            ids += re.findall(r"def\('([a-zA-Z0-9_]+)'", open(p, encoding="utf-8").read())
+    js = open(os.path.join(root, "src", "engine", "audio.js"), encoding="utf-8").read()
+    block = js[js.index("const MATERIAL_OF = {"): js.index("};", js.index("const MATERIAL_OF = {"))]
+    mapped = set(re.findall(r"([a-zA-Z0-9_]+): '", block))
+    missing = [i for i in ids if i not in mapped]
+    print(f"\nMaterials: {len(ids) - len(missing)}/{len(ids)} prop ids mapped explicitly"
+          + (f"; falling back to keyword rules: {missing}" if missing else " (ok)"))
+    return 0  # a fallback still sounds fine; this is a heads-up, not a failure
+
+
 def main():
     fails = music_check()
+    fails += material_check()
     if "--sfx" in sys.argv:
         d = sys.argv[sys.argv.index("--sfx") + 1]
         f2, _ = sfx_check(d)

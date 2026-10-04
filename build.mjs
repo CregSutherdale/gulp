@@ -10,10 +10,14 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 
 // Until the cozy content exists, ship the starter levels (same fallback as dev).
-const STUB = { 'props_cozy.js': 'export {};', 'levels.js': "export { LEVELS } from './levels_starter.js';" };
+const SEASON1_ONLY = process.argv.includes('--season1');
+if (SEASON1_ONLY) console.log('note: --season1 build (Season 2 files stubbed)');
+const STUB = { 'props_cozy.js': 'export {};', 'levels.js': "export { LEVELS } from './levels_starter.js';", 'props_wave2.js': 'export {};', 'levels_wave2.js': 'export const LEVELS = [];' };
 const stubs = { name: 'content-stubs', setup(b) {
-  b.onResolve({ filter: /(props_cozy|levels)\.js$/ }, (a) => {
+  b.onResolve({ filter: /(props_cozy|levels|props_wave2|levels_wave2)\.js$/ }, (a) => {
     const f = path.resolve(a.resolveDir, a.path);
+    // --season1: ship without Season 2 even if its (unvalidated) files exist.
+    if (SEASON1_ONLY && /_wave2\.js$/.test(f)) return { path: f, namespace: 'stub' };
     if (fs.existsSync(f)) return null;
     return { path: f, namespace: 'stub' };
   });

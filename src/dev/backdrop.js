@@ -11,10 +11,15 @@
 //   dist   camera distance override (the brief's "15" start view and "40" big-hole view)
 //   t      freeze animation at this time in seconds (default: live)
 //   props  0 hides the sample arena props   stats 0 hides the overlay
+//   dpr    canvas pixel ratio (2 = phone-like sharpness)   vw, vh  viewport (390 x 844)
+//   hide   comma list of backdrop mesh names to hide (e.g. clouds,gulls)
+//   bench  N rebuilds of the backdrop alone, timed   report  POST stats to 127.0.0.1:5199
+// The overlay also prints a clearance audit (see clearance() below).
 import * as THREE from 'three';
 import { Renderer, patchGround, patchProps, makeHoleMesh, holeUniform } from '../engine/render.js';
 import { buildArena, WORLDS } from '../game/levelbuild.js';
 import { rng } from '../game/maps.js';
+import { buildBackdrop } from '../game/backdrops.js';
 
 const q = new URLSearchParams(location.search);
 const world = WORLDS[q.get('world')] ? q.get('world') : 'bakery';
@@ -41,6 +46,20 @@ const t0 = performance.now();
 const def = buildArena(world, { w: W, d: D }, root, patchGround);
 const buildMs = performance.now() - t0;
 const backdrop = def.backdrop;
+// ?bench=N rebuilds just the backdrop N times (after one warm-up) and times it. Runs at
+// module start: headless virtual time freezes the clock inside animation frames.
+let bench = null;
+if (q.has('bench')) {
+  const n = +q.get('bench') || 10, times = [];
+  for (let i = 0; i <= n; i++) {
+    const g = new THREE.Group(), tb = performance.now();
+    buildBackdrop(world, { w: W, d: D }, g);
+    if (i) times.push(performance.now() - tb);
+    g.traverse((m) => { m.geometry?.dispose(); m.material?.map?.dispose(); });
+  }
+  times.sort((a, b) => a - b);
+  bench = { avg: +(times.reduce((a, b) => a + b, 0) / times.length).toFixed(1), min: +times[0].toFixed(1), med: +times[times.length >> 1].toFixed(1) };
+}
 // ?hide=gulls,clouds hides backdrop meshes by name (debugging).
 const hide = (q.get('hide') || '').split(',').filter(Boolean);
 root.traverse((m) => { if (m.isMesh && hide.includes(m.name)) m.visible = false; });
@@ -97,7 +116,32 @@ function backdropStats() {
     calls++; tris += n;
     rows.push(`${(m.name || m.material.type).padEnd(14)} ${String(Math.round(n)).padStart(6)}`);
   }));
-  return { calls, tris: Math.round(tris), rows };
+  return { calls, tris: Math.round(tris), rows, ...clearance() };
+}
+
+// Safety audit of the backdrop geometry (world space, animated meshes at their pose):
+//  - margin: 3D geometry (y > 0.15) inside |x| < w/2+1.2 and |z| < d/2+1.2
+//  - under:  anything under the board footprint between y=-6 and 0 (would show in the hole)
+//  - sight:  near side (+z) in front of the board: worst (y - railTop) / distance-from-rail.
+//            The camera's shallowest sightline over the near rail has slope ~1.5, so a
+//            value below ~1.3 can never hide the board.
+function clearance() {
+  const hw = W / 2, hd = D / 2, v = new THREE.Vector3();
+  let margin = 0, under = 0, sight = -Infinity;
+  const hits = new Set();
+  root.children.slice(1).forEach((o) => o.traverse((m) => {
+    if (!m.isMesh || !m.visible) return;
+    m.updateWorldMatrix(true, false);
+    const p = m.geometry.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld);
+      const ax = Math.abs(v.x), az = Math.abs(v.z);
+      if (ax < hw + 1.2 && az < hd + 1.2 && v.y > 0.15) { margin++; hits.add(m.name); }
+      if (ax < hw + 0.3 && az < hd + 0.3 && v.y < -0.01 && v.y > -6) { under++; hits.add(m.name + '(under)'); }
+      if (ax < hw + 0.8 && v.z > hd + 1.2 && v.z < hd + 40) sight = Math.max(sight, (v.y - 0.7) / (v.z - hd - 0.8));
+    }
+  }));
+  return { margin, under, sight, hits: [...hits].join(',') };
 }
 
 // Sample props so the arena reads like a real level (optional, best effort).
@@ -155,7 +199,16 @@ function frame(now) {
     const info = renderer.r.info.render;
     statsEl.textContent = `${innerWidth}x${innerHeight} ${world} ${W}x${D} d=${dist.toFixed(1)} r=${r} at=(${hx.toFixed(1)},${hz.toFixed(1)})\n`
       + `backdrop: ${s.calls} calls, ${s.tris} tris, build ${buildMs.toFixed(0)}ms\n`
-      + `frame: ${info.calls} calls, ${info.triangles} tris\n` + s.rows.join('\n');
+      + `frame: ${info.calls} calls, ${info.triangles} tris\n`
+      + (bench ? `bench: avg ${bench.avg}ms min ${bench.min}ms\n` : '')
+      + `clearance: margin=${s.margin} under=${s.under} sight=${s.sight.toFixed(2)} ${s.hits}\n` + s.rows.join('\n');
+    // ?report=1 posts the numbers to a local collector (dev tooling only).
+    if (q.has('report')) {
+      fetch('http://127.0.0.1:5199/', { method: 'POST', mode: 'no-cors', body: JSON.stringify({
+        world, w: W, d: D, calls: s.calls, tris: s.tris, buildMs: +buildMs.toFixed(1), margin: s.margin, under: s.under,
+        sight: +s.sight.toFixed(3), hits: s.hits, meshes: s.rows.map((x) => x.trim().replace(/\s+/g, ' ')), bench,
+      }) }).catch(() => {});
+    }
     document.title = 'backdrop ready';
   }
   // A frozen time only needs a few frames (keeps headless captures fast). The last one is

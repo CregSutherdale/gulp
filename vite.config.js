@@ -6,6 +6,8 @@ import path from 'node:path';
 const STUBS = {
   'props_cozy.js': 'export {};',
   'levels.js': "export { LEVELS } from '/src/game/levels_starter.js';",
+  'props_wave2.js': 'export {};',
+  'levels_wave2.js': 'export const LEVELS = [];',
 };
 
 export default {

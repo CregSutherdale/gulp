@@ -17,7 +17,7 @@
 //  - Tabletop worlds (bakery, kitchen) move the arena's 600x600 surround plane down to
 //    their room floor so the counter/table edge can drop away to a real floor below.
 import * as THREE from 'three';
-import { box, rbox, cyl, cone, ball, torus, capsule, roof, custom, merge } from './geo.js';
+import { box, rbox, cyl, cone, ball, torus, capsule, custom, merge } from './geo.js';
 import { rng } from './maps.js';
 import { patchGround } from '../engine/render.js';
 
@@ -53,6 +53,34 @@ function disc(r, col, x = 0, y = 0, z = 0, seg = 16, sx = 1, sz = 1, ry = 0) {
 }
 const ringXZ = (r0, r1, col, x = 0, y = 0, z = 0, seg = 32, sx = 1, sz = 1) =>
   custom(new THREE.RingGeometry(r0, r1, seg).rotateX(-PI / 2).scale(sx, 1, sz).translate(x, y, z), col);
+// Many flat, upward discs in ONE geometry: [x, y, z, r, colour, seg=7, sx=1, sz=1, ry=0].
+// (Sprinkles, pebbles, ground patches, footprints: hundreds of parts become one.)
+function discBatch(items) {
+  let n = 0;
+  for (const it of items) n += (it[5] || 7) * 3;
+  const pos = new Float32Array(n * 3), col = new Float32Array(n * 3), nor = new Float32Array(n * 3), tm = new Float32Array(n);
+  let k = 0;
+  for (const [x, y, z, r, c, seg = 7, sx = 1, sz = 1, ry = 0] of items) {
+    _c.set(c);
+    const cs = Math.cos(ry), sn = Math.sin(ry);
+    for (let i = 0; i < seg; i++) {
+      for (const a of [-1, (i + 1) / seg, i / seg]) {
+        let px = 0, pz = 0;
+        if (a >= 0) { px = Math.cos(a * TAU) * r * sx; pz = Math.sin(a * TAU) * r * sz; }
+        pos[k * 3] = x + px * cs + pz * sn; pos[k * 3 + 1] = y; pos[k * 3 + 2] = z - px * sn + pz * cs;
+        nor[k * 3 + 1] = 1;
+        col[k * 3] = _c.r; col[k * 3 + 1] = _c.g; col[k * 3 + 2] = _c.b;
+        k++;
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setAttribute('tmask', new THREE.BufferAttribute(tm, 1));
+  return g;
+}
 // Upright rectangle / disc facing +z.
 function panel(w, h, col, x = 0, y = 0, z = 0, ry = 0) {
   const g = new THREE.PlaneGeometry(w, h).translate(0, h / 2, 0); if (ry) g.rotateY(ry);
@@ -278,6 +306,7 @@ function makeKit(worldKey, arena) {
     pick: (arr) => arr[Math.floor(R() * arr.length) % arr.length],
     glossy: [], matte: [], flat: [], glass: [], blobs: [], meshes: [], tick: [], occ: [],
     shadow: 0x334433, floorY: 0,
+    ns: Math.min(1.15, Math.max(0.68, arena.w / 22)), under: [],
   };
   // Place an item: a part list, or { s: glossy, m: matte, g: glass, f: flat ground } lists.
   K.add = (item, x = 0, y = 0, z = 0, ry = 0, s = 1, rx = 0, rz = 0) => {
@@ -350,6 +379,7 @@ function finish(K, root) {
   mk(K.glossy, new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 30, specular: 0x242424 }), 'glossy');
   mk(K.matte, new THREE.MeshLambertMaterial({ vertexColors: true }), 'matte');
   mk(K.flat, patchGround(new THREE.MeshLambertMaterial({ vertexColors: true })), 'ground');
+  mk(K.under, patchGround(new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 30, specular: 0x242424 })), 'under');
   mk(K.glass, new THREE.MeshPhongMaterial({ vertexColors: true, transparent: true, opacity: 0.32, shininess: 120, specular: 0xffffff, depthWrite: false }), 'glass', false);
   if (K.blobs.length) group.add(blobMesh(K.blobs, K.shadow));
   for (const m of K.meshes) group.add(m);
@@ -370,12 +400,13 @@ const WHITE = 0xfffaf4, GOLD = 0xffc95a, CHROME = 0xe6ebf1, CHROME_D = 0xb3bdc9,
 const PASTEL = [0xff9ec8, 0x9fe6cc, 0x9fd2ff, 0xffe27a, 0xc9b2ff, 0xffbf94];
 const FLOWER = [0xff6f9c, 0xffd23f, 0xffffff, 0xff9a3a, 0xc58cff, 0xff5a6e, 0x7fc8ff];
 
-// Fluffy round tree: trunk + a cluster of balls, darker underneath.
+// Cheap tree for the distance (hills, beyond fences): one canopy + one bump.
 function farTree(K, h, cr, leaf, trunk = 0x9a6a44) {
   const can = [egg(cr, cr * 0.95, cr, leaf, 0, h - cr, 0, 9, 6), ballC(cr * 0.6, leaf, cr * 0.55, h - cr * 1.1, cr * 0.2, 0)];
   shadeY(can, h - cr * 2, h, 0.62, 1.15);
   return [cyl(cr * 0.14, cr * 0.2, h - cr * 1.3, trunk, 0, 0, 0, 5), ...can];
 }
+// Fluffy round tree: trunk + a cluster of balls, darker underneath, sunlit on top.
 function roundTree(K, h, cr, leaf, trunk = 0x9a6a44) {
   const th = Math.max(1.2, h - cr * 1.7);
   const parts = [cyl(cr * 0.13, cr * 0.19, th + cr * 0.5, trunk, 0, 0, 0, 7)];
@@ -513,6 +544,53 @@ function setFlap(parts, fn, phase) {
   }
   return parts;
 }
+// Duplicate flat parts with reversed winding so both faces render with a FrontSide material.
+function twoSided(parts) {
+  const out = [];
+  for (const g of [parts].flat(Infinity)) {
+    const b = g.clone(), p = b.attributes.position, n = b.attributes.normal;
+    for (let i = 0; i + 2 < p.count; i += 3) {
+      for (const att of Object.values(b.attributes)) {
+        const k = att.itemSize;
+        for (let c = 0; c < k; c++) { const t = att.array[(i + 1) * k + c]; att.array[(i + 1) * k + c] = att.array[(i + 2) * k + c]; att.array[(i + 2) * k + c] = t; }
+      }
+    }
+    for (let i = 0; i < n.count; i++) n.setXYZ(i, -n.getX(i), -n.getY(i), -n.getZ(i));
+    out.push(g, b);
+  }
+  return out;
+}
+// Butterflies over the flowers: one mesh; each one loops and flaps in the vertex shader.
+function butterflies(K, spots) {
+  const parts = [];
+  for (const [x, y, z] of spots) {
+    const c = K.pick([0xffffff, 0xffd23f, 0xff9ec8, 0x9fd2ff, 0xffb05a, 0xc9a8ff]), ph = K.R() * TAU;
+    const b = [cyl(0.035, 0.035, 0.4, 0x4a3a4a, 0, 0, 0, 4, 0, PI / 2)];
+    for (const sd of [-1, 1]) {
+      b.push(tris([[0.05, 0.02, 0.02 * sd], [0.36, 0.02, 0.5 * sd], [-0.03, 0.02, 0.62 * sd]], c));
+      b.push(tris([[-0.02, 0.02, 0.02 * sd], [-0.03, 0.02, 0.5 * sd], [-0.3, 0.02, 0.36 * sd]], c));
+    }
+    setFlap(b, (px, py, pz) => clamp01(Math.abs(pz) / 0.62), ph);
+    parts.push(...put(b, x, y, z, K.R() * TAU));
+  }
+  const uTime = { value: 0 };
+  const mat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 20, specular: 0x111111 });
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = uTime;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 fl;\nuniform float uTime;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        float bph = fl.y;
+        transformed.x += sin(uTime * 0.6 + bph) * 1.3 + sin(uTime * 1.7 + bph * 2.0) * 0.25;
+        transformed.z += cos(uTime * 0.45 + bph * 1.3) * 0.7;
+        transformed.y += sin(uTime * 2.2 + bph) * 0.18 + fl.x * sin(uTime * 15.0 + bph) * 0.28;`);
+  };
+  mat.customProgramCacheKey = () => 'backdrop-butterflies';
+  const m = new THREE.Mesh(merge(parts), mat);
+  m.name = 'butterflies'; m.frustumCulled = false;
+  K.meshes.push(m);
+  K.tick.push((t) => { uTime.value = t; });
+}
 // Simple bird seen from above, flying along +x. Wings flap via setFlap.
 function gull() {
   const body = [egg(0.55, 0.24, 0.26, WHITE), ballC(0.2, WHITE, 0.5, 0.12, 0, 1), custom(new THREE.ConeGeometry(0.07, 0.3, 5).rotateZ(-PI / 2).translate(0.82, 0.14, 0), 0xffa53a)];
@@ -526,7 +604,7 @@ function bakery(K) {
   const { hw, hd } = K;
   const FL = -9, TOP = 26;
   const X0 = hw + 0.5, Z0 = hd + 0.5;
-  const CX = hw + 12, CZ = hd + 3, BZ = -(hd + 6), RX = hw + 22, SZ = hd + 16;
+  const CX = hw + 12, CZ = hd + 3.6, BZ = -(hd + 6), RX = hw + 22, SZ = hd + 16;
   const FZ = CZ - 0.75;   // cabinet face plane
   K.floorY = FL; K.shadow = 0x8c4a64;
   const G = K.glossy, M = K.matte;
@@ -581,6 +659,10 @@ function bakery(K) {
     G.push(box(1.7, 0.9, SZ - BZ + 1.7, CAP, s * (RX + 0.5), TOP, (SZ + BZ - 1) / 2));
   }
   G.push(box(2 * RX + 2.8, 0.9, 1.7, CAP, 0, TOP, BZ - 0.5));
+  const mhX = CX + Math.min(5, (RX - CX) * 0.5);
+  G.push(custom(new THREE.CircleGeometry(0.95, 14, 0, PI).translate(mhX, FL, BZ + 0.47), 0x3a2630));
+  G.push(custom(new THREE.TorusGeometry(0.95, 0.09, 4, 14, PI).translate(mhX, FL, BZ + 0.47), WHITE));
+  K.add([custom(new THREE.ExtrudeGeometry(gableShape(0.9, 0.55), { depth: 0.45, bevelEnabled: false }).rotateX(-PI / 2), 0xffd84a)], mhX + 1.6, FL, BZ + 1.4, 0.5);
   G.push(box(2 * RX, 0.6, 0.6, WHITE, 0, TOP - 0.6, BZ + 0.3));
 
   // Backsplash of pastel tiles.
@@ -610,7 +692,8 @@ function bakery(K) {
   const nl = Math.max(2, Math.round((2 * hw) / 9));
   for (let i = 0; i < nl; i++) {
     const x = -(hw - 2.5) + (2 * hw - 5) * (i / (nl - 1));
-    K.add(pendant([0xff8fb8, 0x8fdcc4, 0xffd36e][i % 3], 30), x, 7.8, -(hd + 3.4), 0, 0.85);
+    K.add(pendant([0xff8fb8, 0x8fdcc4, 0xffd36e][i % 3], (TOP - 7.8) / 0.85 - 2.2), x, 7.8, -(hd + 3.4), 0, 0.85);
+    G.push(cyl(0.7, 0.45, 0.4, WHITE, x, TOP - 0.4, -(hd + 3.4), 12));
   }
 
   // Counter-top pieces (beyond the rail, profile toward the camera).
@@ -624,7 +707,7 @@ function bakery(K) {
   K.blob(hw + 5.8, 0.02, hd * 0.38, 2.6, 2.6, 0.3);
   K.add(eggCarton(), hw + 9.0, 0, hd * 0.02, -0.25, 1.0);
   K.blob(hw + 9.0, 0.02, hd * 0.02, 2.2, 1.6, 0.25, -0.25);
-  const backZ = -(hd + 3.7);
+  const backZ = -(hd + 3.95);
   const row = [
     () => [cakeDome(K, 0xffb6cf, 0xfffaf4), 4.6, 2.5], () => [{ s: canisters() }, 6.4, 3.0], () => [candyJarBig(K), 3.2, 1.6],
     () => [cakeDome(K, 0xffe3a6, 0xc98a5b), 4.6, 2.5], () => [{ s: crock() }, 3.0, 1.6], () => [breadBoard(K), 5.4, 2.6],
@@ -634,17 +717,21 @@ function bakery(K) {
   while (rx < CX - 2) {
     const [it, w, br] = row[ri++ % row.length]();
     if (rx + w > CX - 0.8) break;
-    K.add(it, rx + w / 2, 0, backZ + K.rnd(-0.4, 0.4), K.rnd(-0.3, 0.3));
+    K.add(it, rx + w / 2, 0, backZ - K.rnd(0, 0.45), K.rnd(-0.3, 0.3));
     K.blob(rx + w / 2, 0.02, backZ, br + 0.4, 2.2, 0.32);
     rx += w + K.rnd(0.6, 1.6);
   }
 
-  // Floor below the counter: stools and a bread crate.
+  // Near counter strip (seen at every level start): low, flat pieces only.
+  K.add(teaTowel(), -hw * 0.5, 0, hd + 2.4, 0.12, K.ns);
+  K.blob(-hw * 0.5, 0.02, hd + 2.4, 1.7 * K.ns, 1.1 * K.ns, 0.18, 0.12);
+  K.add(pipingBag(), hw * 0.45, 0, hd + 2.5, -0.5, K.ns);
+  K.blob(hw * 0.45, 0.02, hd + 2.5, 1.9 * K.ns, 0.9 * K.ns, 0.2, -0.5);
+
+  // Floor below the counter: a rug runner, cake boxes and a bread crate.
   const rw = Math.min(hw * 1.3, 14);
   M.push(rectXZ(-rw, rw, FZ + 1.6, FZ + 5.2, FL + 0.03, 0xff9ec0), rectXZ(-rw + 0.35, rw - 0.35, FZ + 1.95, FZ + 4.85, FL + 0.05, 0xfff1f5));
   for (let x = -rw + 1.2; x < rw - 0.8; x += 1.6) M.push(disc(0.35, 0xffc2d6, x, FL + 0.07, FZ + 3.4, 10));
-  K.add(teaTowel(), -hw * 0.55, 0, hd + 2.1, 0.12);
-  K.blob(-hw * 0.55, 0.02, hd + 2.1, 1.7, 1.1, 0.18, 0.12);
   K.add(cakeBoxes(), -(CX - 3.2), FL, FZ + 4.6, 0.3);
   K.blob(-(CX - 3.2), FL + 0.03, FZ + 4.6, 3.0, 2.6, 0.38);
   K.add(breadCrate(K), CX - 3.5, FL, FZ + 5.5, -0.35);
@@ -652,12 +739,18 @@ function bakery(K) {
   M.push(ringXZ(2.0, 3.2, 0xff9ec0, -(CX - 4), FL + 0.03, FZ + 6, 28), disc(2.0, 0xffe7ef, -(CX - 4), FL + 0.03, FZ + 6, 28));
 }
 
-function teaTowel() {
-  const p = [rbox(2.6, 0.16, 1.5, 0xffffff, 0, 0, 0, 0.06)];
-  for (let i = 0; i < 4; i++) p.push(box(0.26, 0.02, 1.5, 0xff8fb8, -0.95 + i * 0.63, 0.16, 0));
-  for (let j = 0; j < 2; j++) p.push(box(2.6, 0.02, 0.24, 0xff8fb8, 0, 0.17, -0.35 + j * 0.7));
-  p.push(rod([-0.4, 0.3, 0.9], [1.9, 0.25, 0.1], 0.08, 0.1, 0xd9a066), egg(0.42, 0.12, 0.3, 0xd9a066, -0.75, 0.3, 1.05));
+function pipingBag() {
+  // A piping bag of pink frosting lying on the counter, its star tip and a little swirl.
+  const p = [custom(new THREE.ConeGeometry(0.55, 2.6, 14).rotateZ(PI / 2).translate(0, 0.5, 0), 0xffb6cf),
+    egg(0.6, 0.48, 0.55, 0xffb6cf, 1.45, 0.5, 0, 12, 8), custom(new THREE.TorusGeometry(0.36, 0.1, 6, 10).rotateY(PI / 2).translate(1.95, 0.5, 0), 0xffffff),
+    custom(new THREE.ConeGeometry(0.16, 0.42, 8).rotateZ(PI / 2).translate(-1.45, 0.5, 0), CHROME)];
+  p.push(...put([custom(new THREE.TorusGeometry(0.32, 0.13, 6, 14).rotateX(PI / 2), 0xffc7da), custom(new THREE.TorusGeometry(0.2, 0.11, 6, 12).rotateX(PI / 2).translate(0, 0.17, 0), 0xffd3e2),
+    custom(new THREE.ConeGeometry(0.16, 0.3, 8).translate(0, 0.38, 0), 0xffe0ea)], -2.2, 0.12, 0.35));
   return p;
+}
+function teaTowel() {
+  return [box(2.6, 0.14, 1.5, 0xfff7f9, 0, 0, 0), box(2.62, 0.02, 0.22, 0xff8fb8, 0, 0.14, -0.45), box(2.62, 0.02, 0.22, 0xff8fb8, 0, 0.14, 0.45),
+    rod([-0.6, 0.32, 0.95], [1.6, 0.26, 0.2], 0.08, 0.1, 0xd9a066), egg(0.42, 0.12, 0.3, 0xd9a066, -0.95, 0.3, 1.1)];
 }
 function candyJarBig(K) {
   const j = candyJar(K);
@@ -666,7 +759,7 @@ function candyJarBig(K) {
 function breadBoard(K) {
   const B = 0xe8a95e, BD = 0xc8843f;
   const p = [rbox(4.8, 0.35, 2.6, 0xd9a066, 0, 0, 0, 0.12), capsule(0.42, 3.0, B, -0.3, 0.75, -0.55, PI / 2), capsule(0.38, 2.6, BD, 0.2, 0.7, 0.45, PI / 2)];
-  for (let i = 0; i < 4; i++) p.push(egg(0.32, 0.08, 0.12, 0xfff3e0, -1.5 + i * 0.85, 1.15, -0.55, 6, 4).rotateY(0.6));
+  for (let i = 0; i < 4; i++) p.push(custom(new THREE.SphereGeometry(1, 6, 4).scale(0.32, 0.08, 0.12).rotateY(0.6).translate(-1.5 + i * 0.85, 1.15, -0.55), 0xfff3e0));
   p.push(dome(0.95, 0.7, 0.8, B, 1.6, 0.35, 0.0, 12, 4));
   return { s: p };
 }
@@ -804,10 +897,6 @@ function crock() {
     rod([0, 2.0, -0.2], [0.1, 5.2, -0.9], 0.1, 0.1, 0x8fdcc4), box(0.7, 0.9, 0.08, 0xffe27a, 0.1, 5.1, -0.95),
   ];
 }
-function stool(col) {
-  return [cyl(1.1, 1.1, 0.25, CHROME_D, 0, 0, 0, 16), cyl(0.17, 0.17, 5.1, CHROME, 0, 0.2, 0, 8), torus(0.85, 0.08, CHROME, 0, 2.2, 0, PI / 2, 20),
-    cyl(1.35, 1.25, 0.45, CHROME, 0, 5.1, 0, 18), egg(1.35, 0.42, 1.35, col, 0, 5.55, 0, 16, 6)];
-}
 function breadCrate(K) {
   const W = 0xd6a46c, B = 0xe8a95e, BD = 0xc8843f;
   const p = [box(4.6, 0.3, 3.0, W, 0, 0, 0)];
@@ -835,19 +924,20 @@ function kitchen(K) {
   ];
   jitter(band, K.R, 0.07);
   K.flat.push(...band);
-  G.push(rbox(2 * TX + 0.1, 1.0, 1.1, EDGE, 0, -1.01, TZ - 0.5, 0.32), rbox(2 * TX + 0.1, 1.0, 1.1, EDGE, 0, -1.01, -(TZ - 0.5), 0.32));
-  for (const s of [-1, 1]) G.push(rbox(1.1, 1.0, 2 * TZ, EDGE, s * (TX - 0.5), -1.01, 0, 0.32));
-  G.push(box(2 * TX - 2.6, 1.3, 0.35, APRON, 0, -2.3, TZ - 1.25), box(2 * TX - 2.6, 1.3, 0.35, APRON, 0, -2.3, -(TZ - 1.25)));
-  for (const s of [-1, 1]) G.push(box(0.35, 1.3, 2 * TZ - 2.6, APRON, s * (TX - 1.25), -2.3, 0));
+  const U = K.under;
+  U.push(rbox(2 * TX + 0.1, 1.0, 1.1, EDGE, 0, -1.01, TZ - 0.5, 0.32), rbox(2 * TX + 0.1, 1.0, 1.1, EDGE, 0, -1.01, -(TZ - 0.5), 0.32));
+  for (const s of [-1, 1]) U.push(rbox(1.1, 1.0, 2 * TZ, EDGE, s * (TX - 0.5), -1.01, 0, 0.32));
+  U.push(box(2 * TX - 2.6, 1.3, 0.35, APRON, 0, -2.3, TZ - 1.25), box(2 * TX - 2.6, 1.3, 0.35, APRON, 0, -2.3, -(TZ - 1.25)));
+  for (const s of [-1, 1]) U.push(box(0.35, 1.3, 2 * TZ - 2.6, APRON, s * (TX - 1.25), -2.3, 0));
   const legP = [[0.38, 0], [0.48, 0.25], [0.4, 0.6], [0.34, 1.6], [0.42, 2.8], [0.6, 3.3], [0.45, 3.8], [0.5, 4.6], [0.62, 5.0], [0.62, 7.0]];
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-    G.push(lathe(legP, LEG, 10, sx * (TX - 1.15), FL, sz * (TZ - 1.15)));
+    U.push(lathe(legP, LEG, 10, sx * (TX - 1.15), FL, sz * (TZ - 1.15)));
     K.blob(sx * (TX - 1.15), FL + 0.04, sz * (TZ - 1.15), 1.3, 1.3, 0.45);
   }
 
   // Floor, braided rug under the table, soft shadow under the table top.
   K.meshes.push(texMesh([rectXZ(-RX, RX, BZ, hd + 70, FL, 0xffffff)], planksTex(K.R, 27, 42, 47), 14, { name: 'floor' }));
-  const rugC = [0xc9705a, 0xefdcc0, 0xd9a35a, 0xefdcc0, 0x8fae8a, 0xefdcc0, 0xc9705a, 0xe8cfae, 0xd9a35a, 0xefdcc0];
+  const rugC = [0xb8644f, 0xeedcc2, 0xe8d3b6, 0xd49a5a, 0xeedcc2, 0xe8d3b6, 0x93ad8a, 0xeedcc2, 0xe8d3b6, 0xeedcc2];
   const rx = TX + 3.6, rz = TZ + 3.2, nr = rugC.length;
   for (let i = 0; i < nr; i++) {
     const r0 = 1 - ((i + 1) / nr) * 0.36, r1 = 1 - (i / nr) * 0.36;
@@ -861,7 +951,7 @@ function kitchen(K) {
   let ci = 0;
   const place = (x, z, ry) => {
     const [c, cd, cu] = chairPal[ci++ % chairPal.length];
-    K.add(chair(c, cd, cu), x, FL, z, ry);
+    K.under.push(...put(chair(c, cd, cu), x, FL, z, ry));
     K.blob(x, FL + 0.05, z, 2.4, 2.4, 0.4);
   };
   const nSide = Math.max(1, Math.floor((2 * hd - 6) / 11));
@@ -940,11 +1030,16 @@ function kitchen(K) {
   K.add(wallClock(0xff9a3c), wx, CT + 18.4, BZ + 0.05);
 
   // A sleepy cat on its bed by the near-left corner of the table.
-  const catX = -Math.min(hw * 0.5, 6), catZ = TZ + 5.6;
-  K.add(catBed(), catX, FL, catZ, 0.5);
-  K.blob(catX, FL + 0.04, catZ, 3.0, 2.6, 0.4);
-  K.add([cyl(0.9, 0.7, 0.55, 0xff8fb8, 0, 0, 0, 14), disc(0.75, 0x7fc8ff, 0, 0.5, 0, 14)], catX + 3.6, FL, catZ + 1.2);
-  K.blob(catX + 3.6, FL + 0.04, catZ + 1.2, 1.1, 1.1, 0.35);
+  const ns = K.ns, catX = -Math.min(hw * 0.5, 6), catZ = TZ + 2.6 + 3.0 * ns;
+  const cb = catBed();
+  K.add(cb.bed, catX, FL, catZ, 0.5, ns);
+  const cat = new THREE.Mesh(merge(put(cb.cat, 0, 0, 0, 0.5, ns)), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 30, specular: 0x242424 }));
+  cat.name = 'cat'; cat.position.set(catX, FL + 0.3 * ns, catZ);
+  K.meshes.push(cat);
+  K.tick.push((t) => { const b = Math.sin(t * 1.4); cat.scale.set(1 + b * 0.012, 1 + b * 0.035, 1 + b * 0.012); });
+  K.blob(catX, FL + 0.04, catZ, 3.0 * ns, 2.6 * ns, 0.4);
+  K.add([cyl(0.9, 0.7, 0.55, 0xff8fb8, 0, 0, 0, 14), disc(0.75, 0x7fc8ff, 0, 0.5, 0, 14)], catX + 3.6 * ns, FL, catZ + 1.2 * ns, 0, ns);
+  K.blob(catX + 3.6 * ns, FL + 0.04, catZ + 1.2 * ns, 1.1 * ns, 1.1 * ns, 0.35);
 }
 function chair(col, colD, cushion) {
   const P = [box(3.6, 0.45, 3.4, col, 0, 4.2, 0), rbox(3.2, 0.4, 3.0, cushion, 0, 4.62, 0.1, 0.18)];
@@ -982,21 +1077,23 @@ function windowView(K, w, h, frame, curtains) {
   return { s, g };
 }
 function catBed() {
-  const FUR = 0xf4a85e, FURL = 0xffd2a0;
-  return [
-    torus(2.0, 0.65, 0xff9ec0, 0, 0.6, 0, PI / 2, 22), disc(1.95, 0xffd6e4, 0, 0.35, 0, 20), cyl(2.0, 2.1, 0.35, 0xff9ec0, 0, 0, 0, 20),
-    egg(1.35, 0.75, 1.05, FUR, 0, 0.95, 0, 14, 9), ballC(0.62, FUR, 1.0, 1.25, 0.55, 1), ballC(0.32, FURL, 1.38, 1.05, 0.72, 1),
-    cone(0.22, 0.42, FUR, 0.75, 1.65, 0.75, 6), cone(0.22, 0.42, FUR, 1.25, 1.62, 0.25, 6),
-    custom(new THREE.TorusGeometry(1.15, 0.24, 6, 14, PI * 1.1).rotateX(PI / 2).rotateY(0.2).translate(0, 0.85, 0), FUR),
-    box(0.06, 0.05, 0.35, INK, 1.42, 1.32, 0.98), box(0.35, 0.05, 0.06, INK, 1.6, 1.32, 0.6),
+  const FUR = 0xf4a85e, FURL = 0xffd2a0, y = -0.3;
+  const bed = [torus(2.0, 0.65, 0xff9ec0, 0, 0.6, 0, PI / 2, 22), disc(1.95, 0xffd6e4, 0, 0.35, 0, 20), cyl(2.0, 2.1, 0.35, 0xff9ec0, 0, 0, 0, 20)];
+  const cat = [
+    egg(1.35, 0.75, 1.05, FUR, 0, 0.95 + y, 0, 14, 9), ballC(0.62, FUR, 1.0, 1.25 + y, 0.55, 1), ballC(0.32, FURL, 1.38, 1.05 + y, 0.72, 1),
+    cone(0.22, 0.42, FUR, 0.75, 1.65 + y, 0.75, 6), cone(0.22, 0.42, FUR, 1.25, 1.62 + y, 0.25, 6),
+    custom(new THREE.TorusGeometry(1.15, 0.24, 6, 14, PI * 1.1).rotateX(PI / 2).rotateY(0.2).translate(0, 0.85 + y, 0), FUR),
+    box(0.06, 0.05, 0.35, INK, 1.42, 1.32 + y, 0.98), box(0.35, 0.05, 0.06, INK, 1.6, 1.32 + y, 0.6),
   ];
+  for (const [sx, k] of [[-0.55, 0.92], [-0.1, 1.0], [0.35, 0.97]]) cat.push(custom(new THREE.TorusGeometry(1, 0.07, 4, 12, PI).rotateY(PI / 2).scale(1, 0.77 * k, 1.07 * k).translate(sx, 0.95 + y, 0), 0xd9843e));
+  return { bed, cat };
 }
 
 // ============================================================== PLAYROOM
 function playroom(K) {
   const { hw, hd } = K;
   const X0 = hw + 0.5, Z0 = hd + 0.5, B = 1.8;
-  const BZ = -(hd + 8), RX = hw + 17, SZ = hd + 9, TOP = 26;
+  const BZ = -(hd + 8), RX = hw + 14, SZ = hd + 9, TOP = 26, ns = K.ns;
   K.shadow = 0x5a4458;
   const G = K.glossy;
 
@@ -1066,22 +1163,22 @@ function playroom(K) {
   K.blob(hw + 7.6, 0.03, hd * 0.12 + 2.6, 2.0, 2.0, 0.35);
 
   // Near side, all low: a wooden train track loop and floor cushions.
-  const trx = Math.min(hw - 0.5, 10), trz = 3.0, tcz = Z0 + B + 4.4;
+  const trx = Math.min(hw - 0.5, 10 * ns), trz = 3.0 * ns, tcz = Z0 + B + 1.3 + trz;
   trainTrack(K, 0, tcz, trx, trz);
   const rugR = [0xff8fab, 0xffd166, 0x8fe3b0, 0x8fc8ff, 0xc8a8ff];
   rugR.forEach((c, i) => K.flat.push(ringXZ(1.0 - (i + 1) * 0.16, 1.0 - i * 0.16, c, 0, 0.03, tcz, 40, trx * 0.62, trz * 0.68)));
   K.flat.push(disc(0.2, WHITE, 0, 0.03, tcz, 30, trx * 0.62, trz * 0.68));
-  K.add(xylophone(), -trx * 0.3, 0, tcz, 0.15);
-  K.blob(-trx * 0.3, 0.035, tcz, 2.2, 1.4, 0.3);
-  K.add(bookStack(K), trx * 0.32, 0, tcz - 0.2, -0.3);
-  K.blob(trx * 0.32, 0.035, tcz - 0.2, 1.6, 1.3, 0.3);
+  K.add(xylophone(), -trx * 0.3, 0, tcz, 0.15, ns * 0.9);
+  K.blob(-trx * 0.3, 0.035, tcz, 2.2 * ns, 1.4 * ns, 0.3);
+  K.add(bookStack(K), trx * 0.32, 0, tcz - 0.2, -0.3, ns * 0.9);
+  K.blob(trx * 0.32, 0.035, tcz - 0.2, 1.6 * ns, 1.3 * ns, 0.3);
   for (const s of [-1, 1]) {
-    const cx = s * (X0 + B + 3.6), cz = Z0 + B + 2.2;
-    K.add([egg(2.2, 0.85, 2.2, s > 0 ? 0xffb3c7 : 0x9fe0cf, 0, 0.5, 0, 18, 8), torus(1.1, 0.16, WHITE, 0, 1.18, 0, PI / 2, 16)], cx, 0, cz);
-    K.blob(cx, 0.035, cz, 2.7, 2.7, 0.4);
+    const cx = s * (X0 + B + 3.6 * ns), cz = Z0 + B + 2.2 * ns;
+    K.add([egg(2.2, 0.85, 2.2, s > 0 ? 0xffb3c7 : 0x9fe0cf, 0, 0.5, 0, 18, 8), torus(1.1, 0.16, WHITE, 0, 1.18, 0, PI / 2, 16)], cx, 0, cz, 0, ns);
+    K.blob(cx, 0.035, cz, 2.7 * ns, 2.7 * ns, 0.4);
   }
-  K.add(shapeStar(0xffd23f), -(X0 + B + 2.0), 0, Z0 + B + 8.0, 0.3);
-  K.add(shapeStar(0xff9ec8), X0 + B + 2.6, 0, Z0 + B + 8.6, -0.5);
+  K.add(shapeStar(0xffd23f), -(X0 + B + 2.0 * ns), 0, tcz + trz + 2.4 * ns, 0.3, ns);
+  K.add(shapeStar(0xff9ec8), X0 + B + 2.6 * ns, 0, tcz + trz + 3.0 * ns, -0.5, ns);
 }
 function xylophone() {
   const p = [box(4.2, 0.35, 0.3, 0xd9a066, 0, 0.15, -0.9), box(4.2, 0.35, 0.3, 0xd9a066, 0, 0.15, 0.9)];
@@ -1184,9 +1281,14 @@ function blockTower(K, n) {
   const p = []; let y = 0;
   for (let i = 0; i < n; i++) {
     const s = 2.3 - i * 0.08, c = cols[(i + Math.floor(K.R() * 6)) % 6], c2 = cols[(i + 3) % 6], ry = K.rnd(-0.35, 0.35);
-    const blk = [box(s, s, s, c, 0, 0, 0)];
-    blk.push(box(s * 0.62, s * 0.62, 0.04, c2, 0, s * 0.19, s / 2 + 0.01), box(s * 0.62, s * 0.62, 0.04, c2, 0, s * 0.19, -s / 2 - 0.01));
-    blk.push(box(0.04, s * 0.62, s * 0.62, WHITE, s / 2 + 0.01, s * 0.19, 0), box(0.04, s * 0.62, s * 0.62, WHITE, -s / 2 - 0.01, s * 0.19, 0));
+    const blk = [rbox(s, s, s, c, 0, 0, 0, 0.16)];
+    const ins = i % 3 === 0 ? starShape(s * 0.3) : null;
+    for (const [nx, nz] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+      const g = ins ? new THREE.ShapeGeometry(ins) : new THREE.CircleGeometry(s * 0.28, 16);
+      g.translate(0, 0, s / 2 + 0.012).rotateY(Math.atan2(nx, nz)).translate(0, s / 2, 0);
+      blk.push(custom(g, c2));
+    }
+    blk.push(disc(s * 0.28, c2, 0, s + 0.012, 0, 16));
     p.push(...put(blk, K.rnd(-0.12, 0.12), y, K.rnd(-0.12, 0.12), ry));
     y += s;
   }
@@ -1223,7 +1325,9 @@ function picnic(K) {
 
   // Pond (left side) with ducks, reeds, lily pads and stones.
   const px = -(hw + 9.5), pz = -hd * 0.12, prx = 4.8, prz = 6.2;
+  const stx = hw + 8.5, stz = -hd * 0.1;   // the swing tree (built further down)
   K.claim(px, pz, 7.5);
+  K.claim(stx - 1.5, stz, 5.0);
   const pond = (r, col, y) => {
     const g = new THREE.CircleGeometry(1, 40).rotateX(-PI / 2), p = g.attributes.position;
     for (let i = 1; i < p.count; i++) { const a = Math.atan2(p.getZ(i), p.getX(i)), k = r * (1 + Math.sin(a * 3 + 1) * 0.07 + Math.sin(a * 5 + 2) * 0.04); p.setXYZ(i, p.getX(i) * k * prx, y, p.getZ(i) * k * prz); }
@@ -1248,7 +1352,7 @@ function picnic(K) {
     const rx0 = px + Math.cos(a) * prx * 0.95, rz0 = pz + Math.sin(a) * prz * 0.95;
     for (let i = 0; i < 6; i++) {
       const x = rx0 + K.rnd(-0.5, 0.5), z = rz0 + K.rnd(-0.5, 0.5), h = K.rnd(1.6, 2.6), lean = K.rnd(-0.25, 0.25);
-      G.push(rod([x, 0, z], [x + lean, h, z], 0.06, 0.04, 0x5c9e3c), capsule(0.12, 0.45, 0x8a5a33, x + lean * 0.85, h * 0.78, z));
+      G.push(rod([x, 0, z], [x + lean, h, z], 0.06, 0.04, 0x5c9e3c, 4), cyl(0.13, 0.13, 0.55, 0x8a5a33, x + lean * 0.82, h * 0.72, z, 6));
     }
   }
   // Ducks swim in a slow circle.
@@ -1281,7 +1385,6 @@ function picnic(K) {
   for (const s of [-1, 1]) {
     for (let i = 0; i < 12; i++) {
       const x = s * (hw + K.rnd(5.5, 22)), z = K.rnd(-(hd + 4), hd + 6);
-      if (s > 0 && Math.abs(z) < hd * 0.4 && x < hw + 9) continue;
       plantTree(x, z, K.rnd(0.7, 1.15), K.R() < 0.3 ? 'pine' : 'round');
     }
   }
@@ -1300,12 +1403,13 @@ function picnic(K) {
   }
 
   // Ground: soft patches, a path along the near side, flowers and grass tufts.
+  const dots = [];
   for (let i = 0; i < 60; i++) {
     const [x, z] = K.around(2.5, 26, 16), r = K.rnd(1.6, 4.5);
     if (!K.free(x, z, r * 0.6)) continue;
-    K.flat.push(disc(r, K.pick([0x80c25c, 0x8dcb66, 0x7aba57, 0x93ce6b]), x, 0.01 + (i % 4) * 0.01, z, 20, 1, K.rnd(0.6, 1.0), K.R() * PI));
+    dots.push([x, 0.01 + (i % 4) * 0.01, z, r, K.pick([0x80c25c, 0x8dcb66, 0x7aba57, 0x93ce6b]), 20, 1, K.rnd(0.6, 1.0), K.R() * PI]);
   }
-  const pathZ = hd + 7.2;
+  const pathZ = hd + 3.9 + 3.4 * K.ns;
   const pw = [];
   for (let x = -(hw + 24); x < hw + 24; x += 1.5) {
     const z0 = pathZ + Math.sin(x * 0.12) * 1.4, z1 = pathZ + Math.sin((x + 1.5) * 0.12) * 1.4;
@@ -1315,42 +1419,58 @@ function picnic(K) {
   K.flat.push(...pw);
   for (let i = 0; i < 26; i++) {
     const x = K.rnd(-(hw + 20), hw + 20), z = pathZ + Math.sin(x * 0.12) * 1.4 + K.rnd(-0.8, 0.8);
-    K.flat.push(disc(K.rnd(0.14, 0.24), 0xd8c095, x, 0.075, z, 9));
+    dots.push([x, 0.075, z, K.rnd(0.14, 0.24), 0xd8c095, 9]);
   }
   // a flower border along the near side (the part of the world seen at every level start)
   for (let x = -(hw + 8); x <= hw + 8; x += K.rnd(1.7, 2.6)) {
-    const z = hd + K.rnd(2.2, 3.6);
+    const z = hd + K.rnd(2.5, 3.7);
     K.add(flowerClump(K, K.rnd(0.7, 1.05), K.pick(FLOWER)), x, 0, z);
     K.claim(x, z, 0.8);
   }
   for (let i = 0; i < 30; i++) {
-    const [x, z] = K.around(1.8, 20, 16);
+    const [x, z] = K.around(2.5, 20, 16);
     if (!K.free(x, z, 0.9) || Math.abs(z - pathZ - Math.sin(x * 0.12) * 1.4) < 1.8) continue;
     K.add(flowerClump(K, K.rnd(0.7, 1.1), K.pick(FLOWER)), x, 0, z);
   }
   for (let i = 0; i < 260; i++) {
     const [x, z] = K.around(1.6, 24, 16);
     if (Math.abs(z - pathZ - Math.sin(x * 0.12) * 1.4) < 1.4) continue;
-    K.flat.push(disc(0.14, K.pick([0xffffff, 0xffffff, 0xfff27a, 0xffb3d1]), x, 0.09, z, 5));
+    dots.push([x, 0.09, z, 0.14, K.pick([0xffffff, 0xffffff, 0xfff27a, 0xffb3d1]), 5]);
   }
+  K.flat.push(discBatch(dots));
   for (let i = 0; i < 110; i++) {
     const [x, z] = K.around(1.6, 24, 16);
     if (Math.abs(z - pathZ - Math.sin(x * 0.12) * 1.4) < 1.5) continue;
     K.add(tuft(K, K.rnd(0.6, 1.0), 0x5aa844), x, 0, z);
   }
   for (const s of [-1, 1]) { K.add(bush(K, 1.2, 0x5cbf55), s * (hw + 3.2), 0, hd + 3.6); K.blob(s * (hw + 3.2), 0.02, hd + 3.6, 2.0, 1.8, 0.35); }
+  // A big shady tree with a rope swing beside the board (right side).
+  K.add(swingTree(K), stx, 0, stz);
+  K.blob(stx - 1.5, 0.02, stz + 0.5, 5.5, 4.5, 0.42);
+  K.blob(stx - 4.2, 0.02, stz, 1.0, 0.7, 0.3);
 
+  const nb = Math.max(4, Math.round(K.hw / 2.5)), bsp = [];
+  for (let i = 0; i < nb; i++) bsp.push([K.rnd(-(hw + 5), hw + 5), K.rnd(1.3, 1.8), hd + K.rnd(4.0, 4.8)]);
+  butterflies(K, bsp);
   // A red kite tugging at the sky over the far right, and clouds.
   const kite = [tris([[0, 0, 0], [0.9, 0.9, 0.05], [0, 2.4, 0], [0, 0, 0], [0, 2.4, 0], [-0.9, 0.9, 0.05]], 0xff5a6e, new THREE.Vector3(0, 0.2, 1)),
     tris([[0, 0, 0.02], [0.9, 0.9, 0.07], [0, 0.9, 0.04]], 0xffd23f, new THREE.Vector3(0, 0.2, 1)), rod([0, 0, 0], [-1.6, -5.5, 2.0], 0.03, 0.03, WHITE, 3)];
   for (let i = 0; i < 4; i++) kite.push(custom(new THREE.BoxGeometry(0.35, 0.18, 0.05).rotateZ(0.6).translate(0.2 * Math.sin(i), -0.9 - i * 0.9, 0.1), FLOWER[i]));
-  const km = new THREE.Mesh(merge(kite), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 30, side: THREE.DoubleSide }));
+  const km = new THREE.Mesh(merge(twoSided(kite)), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 30, specular: 0x242424 }));
   km.name = 'kite'; km.position.set(hw + 9, 9.5, -(hd + 11));
   K.meshes.push(km);
   K.tick.push((t) => { km.rotation.z = Math.sin(t * 1.3) * 0.18; km.position.y = 9.5 + Math.sin(t * 0.9) * 0.5; km.position.x = hw + 9 + Math.sin(t * 0.5) * 0.8; });
   const span = hw + 70, cl = [];
   for (let i = 0; i < 5; i++) cl.push([K.rnd(-span, span), K.rnd(7.5, 11), -(hd + K.rnd(14, 34)), K.rnd(1.6, 2.6)]);
   cloudLayer(K, cl, span);
+}
+function swingTree(K) {
+  const p = roundTree(K, 11, 3.8, 0x5cbf55);
+  p.push(rod([0, 6.0, 0], [-4.8, 7.4, 0.2], 0.42, 0.26, 0x9a6a44));
+  p.push(...shadeY([ballC(1.5, 0x5cbf55, -4.6, 8.0, 0.2, 1), ballC(1.1, 0x6ccb5e, -3.6, 8.6, -0.6, 1)], 6.8, 9.6, 0.68, 1.12));
+  for (const dz of [-0.75, 0.75]) p.push(rod([-4.2, 7.2, dz], [-4.2, 1.35, dz], 0.05, 0.05, 0xe8d6b0, 4));
+  p.push(box(1.0, 0.18, 1.9, 0xd98c5a, -4.2, 1.25, 0));
+  return p;
 }
 function duck(body) {
   const beak = 0xff9a2e;
@@ -1363,51 +1483,57 @@ function garden(K) {
   const { hw, hd } = K;
   K.shadow = 0x234a1c;
   const G = K.glossy;
-  const HEDGE = 0x3f9a45, SOIL = 0x7a5232, BEDW = 0xb07a4c;
+  const HEDGE = 0x4aa851, SOIL = 0x7a5232, BEDW = 0xb07a4c;
 
   // Ground patches + clover sprinkle.
+  const dots = [];
   for (let i = 0; i < 50; i++) {
     const [x, z] = K.around(2.6, 26, 16), r = K.rnd(1.5, 4.0);
-    K.flat.push(disc(r, K.pick([0x67ad4c, 0x7bbd57, 0x62a648]), x, 0.01 + (i % 4) * 0.01, z, 14, 1, K.rnd(0.6, 1.0), K.R() * PI));
+    dots.push([x, 0.01 + (i % 4) * 0.01, z, r, K.pick([0x67ad4c, 0x7bbd57, 0x62a648]), 14, 1, K.rnd(0.6, 1.0), K.R() * PI]);
   }
-  for (let i = 0; i < 200; i++) { const [x, z] = K.around(1.6, 24, 16); K.flat.push(disc(0.13, K.pick([0xffffff, 0xfff27a, 0xffc2dc]), x, 0.06, z, 5)); }
+  for (let i = 0; i < 200; i++) { const [x, z] = K.around(1.6, 24, 16); dots.push([x, 0.06, z, 0.13, K.pick([0xffffff, 0xfff27a, 0xffc2dc]), 5]); }
+  K.flat.push(discBatch(dots));
+  const blossoms = [];
 
   // Stepping stones: from the near rail toward the camera, and from the far rail to the gate.
-  const stones = (x0, z0, dir, n) => {
+  const stones = (x0, z0, dir, n, sc) => {
     for (let i = 0; i < n; i++) {
-      const x = x0 + Math.sin(i * 0.9) * 0.55, z = z0 + dir * i * 1.55, r = K.rnd(0.5, 0.66);
+      const x = x0 + Math.sin(i * 0.9) * 0.55 * sc, z = z0 + dir * i * 1.55 * sc, r = K.rnd(0.5, 0.66) * sc;
       G.push(...put([cyl(r, r * 1.06, 0.13, K.pick([0xcfc9bf, 0xd8d3c9, 0xc4beb3]), 0, 0, 0, 9)], x, 0, z, K.R() * TAU, [K.rnd(1.0, 1.3), 1, K.rnd(0.8, 1.0)]));
       K.blob(x, 0.015, z, r * 1.25, r * 1.1, 0.18);
     }
   };
-  stones(0, hd + 1.9, 1, 13);
-  stones(0, -(hd + 1.9), -1, 7);
+  stones(0, hd + 2.3, 1, Math.round(13 / Math.max(0.8, K.ns)), K.ns);
+  stones(0, -(hd + 2.4), -1, 7, 1);
 
   // Raised flowerbeds in two rows on the near side (low), split for the path.
-  const bed = (x0, x1, z, d) => {
+  const bed = (x0, x1, z, d, fs = 1) => {
     const L = x1 - x0, cx = (x0 + x1) / 2;
     G.push(box(L, 0.5, 0.25, BEDW, cx, 0, z - d / 2 + 0.12), box(L, 0.5, 0.25, BEDW, cx, 0, z + d / 2 - 0.12));
     G.push(box(0.25, 0.5, d, BEDW, x0 + 0.12, 0, z), box(0.25, 0.5, d, BEDW, x1 - 0.12, 0, z));
     K.flat.push(rectXZ(x0 + 0.2, x1 - 0.2, z - d / 2 + 0.2, z + d / 2 - 0.2, 0.42, SOIL));
-    const rows = Math.max(1, Math.round(d / 1.1)), col = K.pick(FLOWER), col2 = K.pick(FLOWER);
-    for (let r = 0; r < rows; r++) for (let x = x0 + 0.7; x < x1 - 0.5; x += 0.95) {
+    const rows = Math.max(1, Math.round(d / (1.1 * fs))), col = K.pick(FLOWER), col2 = K.pick(FLOWER);
+    for (let r = 0; r < rows; r++) for (let x = x0 + 0.7 * fs; x < x1 - 0.5 * fs; x += 0.95 * fs) {
       const zz = z - d / 2 + (r + 0.5) * (d / rows), c = r % 2 ? col : col2;
-      G.push(ballC(0.32, 0x4fa64a, x, 0.75, zz, 0, 0.7), disc(0.3, c, x, 0.98, zz, 7), disc(0.12, 0xffe066, x, 1.0, zz, 5));
+      G.push(cone(0.36 * fs, 0.5, 0x4fa64a, x, 0.45, zz, 5), disc(0.3 * fs, c, x, 0.98, zz, 7), disc(0.12 * fs, 0xffe066, x, 1.0, zz, 5));
     }
     K.blob(cx, 0.015, z, L / 2 + 0.4, d / 2 + 0.4, 0.25);
   };
-  const rowSpan = hw + 7;
-  for (const [z, d] of [[hd + 3.3, 2.0], [hd + 7.4, 2.2]]) {
+  const rowSpan = hw + 7, fs = K.ns, d1 = 2.0 * fs, d2 = 2.2 * fs;
+  for (const [z, d] of [[hd + 1.4 + d1 / 2, d1], [hd + 1.4 + d1 + 2.1 * fs + d2 / 2, d2]]) {
     for (const s of [-1, 1]) {
-      let a = 1.4;
+      let a = 1.4 * fs;
       while (a < rowSpan - 1.5) {
-        const len = Math.min(K.rnd(5, 7), rowSpan - a);
-        bed(s > 0 ? a : -(a + len), s > 0 ? a + len : -a, z, d);
-        a += len + 1.3;
+        const len = Math.min(K.rnd(5, 7) * fs, rowSpan - a);
+        bed(s > 0 ? a : -(a + len), s > 0 ? a + len : -a, z, d, fs);
+        a += len + 1.3 * fs;
       }
     }
   }
 
+  const ngb = Math.max(4, Math.round(K.hw / 2.5)), gsp = [];
+  for (let i = 0; i < ngb; i++) gsp.push([K.rnd(-(hw + 5), hw + 5), K.rnd(1.3, 1.7), hd + 1.4 + d1 + 1.05 * fs + K.rnd(0.6, 1.2)]);
+  butterflies(K, gsp);
   // Hedges along both sides with topiary balls at the ends; long beds beyond them.
   for (const s of [-1, 1]) {
     let z = -(hd + 1.5);
@@ -1415,8 +1541,9 @@ function garden(K) {
       const len = Math.min(K.rnd(6, 9), hd + 1.5 - z);
       if (len > 1.5) {
         const hx = s * (hw + 2.9), h = rbox(1.9, 2.5, len, HEDGE, hx, 0, z + len / 2, 0.55);
-        shadeY(h, 0, 2.5, 0.68, 1.1); tintY(h, 1.5, 2.5, 0x9ad66a, 0.25);
+        shadeY(h, 0, 2.5, 0.7, 1.12); tintY(h, 1.5, 2.5, 0xa6dc72, 0.3);
         G.push(h);
+        for (let k = 0; k < len * 1.3; k++) blossoms.push([hx + K.rnd(-0.75, 0.75), 2.52, z + K.rnd(0.4, len - 0.4), 0.15, K.pick([0xffffff, 0xffc2dc, 0xfff27a]), 6]);
         K.blob(hx + 0.4, 0.015, z + len / 2, 1.6, len / 2 + 0.6, 0.38);
       }
       z += len + 1.2;
@@ -1428,6 +1555,7 @@ function garden(K) {
     for (let z3 = -(hd - 1); z3 < hd - 1; z3 += 7) bedAlongZ(K, s * (hw + 7.2), z3, Math.min(5.6, hd - 1 - z3), 2.2, BEDW, SOIL);
   }
 
+  G.push(discBatch(blossoms));
   // Bird bath on the left, sunflowers along the right.
   K.add(birdBath(), -(hw + 11), 0, hd * 0.15);
   K.blob(-(hw + 11), 0.015, hd * 0.15, 1.8, 1.8, 0.4);
@@ -1477,7 +1605,7 @@ function bedAlongZ(K, x, z0, len, d, wood, soil) {
   K.flat.push(rectXZ(x - d / 2 + 0.2, x + d / 2 - 0.2, z0 + 0.2, z1 - 0.2, 0.42, soil));
   const c = K.pick(FLOWER);
   for (let z = z0 + 0.7; z < z1 - 0.5; z += 0.95) for (const dx of [-0.5, 0.5]) {
-    K.glossy.push(cyl(0.05, 0.05, 0.7, 0x4f9a3a, x + dx, 0.4, z, 4), cyl(0.3, 0.16, 0.45, c, x + dx, 1.0, z, 6), ballC(0.3, 0x58ad4c, x + dx, 0.62, z, 0, 0.6));
+    K.glossy.push(cyl(0.3, 0.16, 0.45, c, x + dx, 1.0, z, 5), ballC(0.3, 0x58ad4c, x + dx, 0.62, z, 0, 0.6));
   }
   K.blob(x, 0.015, cz, d / 2 + 0.4, len / 2 + 0.4, 0.25);
 }
@@ -1489,9 +1617,9 @@ function birdOnRim() { return [egg(0.42, 0.3, 0.3, 0x5fa8ff, 0, 0.3, 0, 10, 7), 
 function sunflower(K, h) {
   const p = [cyl(0.1, 0.13, h, 0x4f9a3a, 0, 0, 0, 5)];
   for (let i = 0; i < 2; i++) p.push(egg(0.7, 0.12, 0.35, 0x58ad4c, (i ? -1 : 1) * 0.55, h * (0.4 + i * 0.2), 0, 8, 4));
-  const head = [];
-  for (let i = 0; i < 12; i++) head.push(egg(0.45, 0.2, 0.08, 0xffd23f, 0.75, 0, 0, 6, 4).rotateZ((i / 12) * TAU));
-  head.push(cyl(0.55, 0.55, 0.25, 0x7a4a22, 0, 0, 0.05, 12, PI / 2));
+  // Petals as one pointed star (two layers, offset) instead of 12 little spheres.
+  const head = [shapeZ(starShape(1.25, 0.55, 12), 0xffd23f, 0, 0, 0), custom(new THREE.ShapeGeometry(starShape(1.05, 0.6, 12)).rotateZ(PI / 12).translate(0, 0, 0.03), 0xffb52e),
+    cyl(0.55, 0.55, 0.25, 0x7a4a22, 0, 0, 0.05, 12, PI / 2)];
   p.push(...put(head, 0, h, 0.2, 0, 1, -0.9));
   return p;
 }
@@ -1584,6 +1712,7 @@ function beach(K) {
     const [x, z] = K.around(4.5, 26, 14);
     if (z < SH + 6 || (Math.abs(x) < hw + 3 && z > 0)) continue;
     const rx = K.rnd(3, 7), ry = K.rnd(0.8, 1.9), rz = K.rnd(2.5, 5);
+    if (Math.abs(x) - rx < hw + 1.6 && Math.abs(z) - rz < hd + 1.6) continue;
     if (!K.free(x, z, Math.max(rx, rz) * 0.7)) continue;
     K.claim(x, z, Math.max(rx, rz) * 0.6);
     const dn = dome(rx, ry, rz, 0xf3d79a, x, -0.15, z, 18, 5);
@@ -1594,7 +1723,7 @@ function beach(K) {
 
   // Beach huts in a row on the left, facing the board.
   const nh = Math.max(3, Math.min(5, Math.round(hd / 4.5)));
-  const hutCols = [[0xff9ec8, 0xffffff], [0x8fdcc4, 0xffffff], [0xffe27a, 0xffffff], [0x9fd2ff, 0xffffff], [0xc9b2ff, 0xffffff]];
+  const hutCols = [[0xff9ec8, 0xffffff, 0xff6f9c], [0x8fdcc4, 0xffffff, 0x3fbf98], [0xffe27a, 0xffffff, 0xffb52e], [0x9fd2ff, 0xffffff, 0x4f9dff], [0xc9b2ff, 0xffffff, 0x9a7cff]];
   for (let i = 0; i < nh; i++) {
     const z = -hd * 0.62 + i * 5.2, x = -(hw + 8.2);
     K.claim(x, z, 3.0);
@@ -1602,7 +1731,7 @@ function beach(K) {
     K.blob(x + 0.4, 0.02, z, 2.8, 3.0, 0.38);
   }
   // Palms.
-  const palms = [[hw + 5.0, hd * 0.25], [hw + 8.5, -hd * 0.35], [hw + 4.2, -(hd + 3.2)], [-(hw + 4.6), -(hd + 3.5)], [-(hw + 13), hd * 0.1], [-(hw + 12.5), -hd * 0.65], [hw + 14, hd * 0.6], [hw + 16, -hd * 0.6], [-(hw + 6), hd + 5.5]];
+  const palms = [[hw + 6.2, hd * 0.25], [hw + 9.0, -hd * 0.35], [hw + 5.6, -(hd + 4.6)], [-(hw + 5.4), -(hd + 4.8)], [-(hw + 13), hd * 0.1], [-(hw + 12.5), -hd * 0.65], [hw + 14, hd * 0.6], [hw + 16, -hd * 0.6], [-(hw + 6.4), hd + 5.5]];
   for (const [x, z] of palms) {
     if (!K.free(x, z, 1.5)) continue;
     K.claim(x, z, 1.5);
@@ -1631,30 +1760,32 @@ function beach(K) {
     cols.forEach((c, i) => p.push(rectXZ(-1.4, 1.4, -2.4 + i * (4.8 / cols.length), -2.4 + (i + 1) * (4.8 / cols.length), 0.03, c)));
     return p;
   };
-  const tx = Math.max(3.6, hw * 0.5);
-  K.add({ s: towel([0xff6f9c, 0xffffff, 0xff6f9c, 0xffffff, 0xff6f9c, 0xffffff]) }, -tx, 0, hd + 4.9, 0.3, 0.8);
-  K.add({ s: towel([0x4fa3ff, 0xffe27a, 0x4fa3ff, 0xffe27a, 0x4fa3ff]) }, tx, 0, hd + 5.4, -0.35, 0.8);
-  K.add([dome(0.62, 0.45, 0.62, 0xffe08a, 0, 0.05, 0, 14, 4), disc(1.15, 0xffe08a, 0, 0.06, 0, 18), torus(0.65, 0.07, 0xff6f9c, 0, 0.11, 0, PI / 2, 16)], -tx + 0.3, 0, hd + 4.0);
-  for (const dx of [-0.3, 0.3]) K.add([egg(0.24, 0.05, 0.5, 0x4fa3ff, 0, 0.06, 0, 8, 4), torus(0.15, 0.035, WHITE, 0, 0.11, -0.17, PI / 2, 8)], tx + dx + 0.4, 0, hd + 3.9, 0.2);
+  const ns = K.ns, tx = Math.max(3.6, hw * 0.5), tz = hd + 2.3 + 2.4 * ns;
+  K.add({ s: towel([0xff6f9c, 0xffffff, 0xff6f9c, 0xffffff, 0xff6f9c, 0xffffff]) }, -tx, 0, tz, 0.3, 0.8 * ns);
+  K.add({ s: towel([0x4fa3ff, 0xffe27a, 0x4fa3ff, 0xffe27a, 0x4fa3ff]) }, tx, 0, tz + 0.5 * ns, -0.35, 0.8 * ns);
+  K.add([dome(0.62, 0.45, 0.62, 0xffe08a, 0, 0.05, 0, 14, 4), disc(1.15, 0xffe08a, 0, 0.06, 0, 18), torus(0.65, 0.07, 0xff6f9c, 0, 0.11, 0, PI / 2, 16)], -tx + 0.3 * ns, 0, tz - 0.9 * ns, 0, ns);
+  for (const dx of [-0.3, 0.3]) K.add([egg(0.24, 0.05, 0.5, 0x4fa3ff, 0, 0.06, 0, 8, 4), torus(0.15, 0.035, WHITE, 0, 0.11, -0.17, PI / 2, 8)], tx + (dx + 0.4) * ns, 0, tz - 1.0 * ns, 0.2, ns);
   // A heart drawn in the sand, with a trail of footprints walking up to it.
-  const hcx = 0, hcz = hd + 9.0, hs = 1.25;
+  const hcx = 0, hcz = hd + 2.4 + 4.6 * ns, hs = 1.25 * ns;
+  const marks = [];
   for (let i = 0; i < 64; i++) {
     const t = (i / 64) * TAU, x = 16 * Math.pow(Math.sin(t), 3), y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
-    K.flat.push(disc(0.2, 0xd2ae70, hcx + x * 0.1 * hs, 0.02, hcz - y * 0.1 * hs, 7));
+    marks.push([hcx + x * 0.1 * hs, 0.02, hcz - y * 0.1 * hs, 0.2, 0xd2ae70, 7]);
   }
-  let fx = -(hw + 3), fzz = hd + 15;
+  let fx = -(hw + 3), fzz = hcz + 6 * ns;
   for (let i = 0; i < 30; i++) {
     const a = Math.atan2(hcz + 1.2 - fzz, hcx - 2.4 - fx) + Math.sin(i * 0.55) * 0.22;
     fx += Math.cos(a) * 0.9; fzz += Math.sin(a) * 0.9;
     if (Math.hypot(fx - hcx + 2.4, fzz - hcz - 1.2) < 1.2) break;
     const side = i % 2 ? 1 : -1, ox = -Math.sin(a) * 0.25 * side, oz = Math.cos(a) * 0.25 * side;
-    K.flat.push(disc(0.2, 0xd8b679, fx + ox, 0.02, fzz + oz, 7, 1, 1.6, -a + PI / 2));
+    marks.push([fx + ox, 0.02, fzz + oz, 0.2, 0xd8b679, 7, 1, 1.6, -a + PI / 2]);
   }
+  K.flat.push(discBatch(marks));
   K.add([dome(1.6, 0.9, 1.4, 0xf0d394, 0, 0, 0, 14, 4), rod([0, 0.8, 0], [0, 2.4, 0], 0.05, 0.05, 0x9a6a42, 4), tris([[0, 2.4, 0], [0, 1.8, 0], [0.8, 2.1, 0.05]], 0xff5a6e, new THREE.Vector3(0, 0.3, 1))], hw + 4.2, 0, hd + 6.5);
 
   // Sailboat on the horizon, gulls overhead, clouds over the sea.
   const boat = sailboat();
-  const bm = new THREE.Mesh(merge(boat), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 40, specular: 0x333333, side: THREE.DoubleSide }));
+  const bm = new THREE.Mesh(merge(boat), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 40, specular: 0x333333 }));
   bm.name = 'boat';
   const bx0 = -hw * 0.4, bz = SH - 30;
   bm.position.set(bx0, 0.3, bz);
@@ -1665,13 +1796,13 @@ function beach(K) {
     bm.rotation.z = Math.sin(t * 1.1) * 0.05; bm.rotation.x = Math.sin(t * 0.8 + 1) * 0.03;
   });
   const uT = { value: 0 }, gl = [];
-  [[7.5, 0.0, 5.6], [9.5, 2.0, 6.2], [6.0, 3.4, 6.8], [11, 4.6, 5.2]].forEach(([r, a, y], i) => {
+  [[7.0, 0.0, 5.6], [8.5, 2.0, 6.2], [6.0, 3.4, 6.8], [9.5, 4.6, 5.2]].forEach(([r, a, y], i) => {
     const g = gull();
     setFlap(g, (x, yy, z) => clamp01((Math.abs(z) - 0.25) / 1.4), i * 1.7);
-    gl.push(...put(g, Math.cos(a) * r, y, Math.sin(a) * r, PI / 2 - a, 0.85));
+    gl.push(...put(g, Math.cos(a) * r, y, Math.sin(a) * r, PI / 2 - a, 0.72));
   });
   const gm = new THREE.Mesh(merge(gl), flapMaterial(uT, 7.5, 0.45));
-  gm.name = 'gulls'; gm.position.set(hw * 0.2, 0, SH - 2.5);
+  gm.name = 'gulls'; gm.position.set(hw * 0.2, 0, -(hd + 15));
   K.meshes.push(gm);
   K.tick.push((t) => { uT.value = t; gm.rotation.y = t * 0.32; });
   const span = hw + 70, cl = [];
@@ -1738,12 +1869,13 @@ function ocean(K, shoreAt, SH) {
   K.tick.push((t) => { uTime.value = t; });
   return m;
 }
-function beachHut(K, col, trim) {
+function beachHut(K, col, trim, roofCol) {
   const W = 3.8, H = 4.3, D = 3.4;
   const p = [box(W + 1.0, 0.5, D + 1.8, 0xc9935f, 0, 0, 0.5)];
   for (let i = 0; i < 7; i++) p.push(box(W / 7, H, D, i % 2 ? trim : col, -W / 2 + (i + 0.5) * W / 7, 0.5, 0));
-  p.push(custom(new THREE.ExtrudeGeometry(gableShape(W + 0.9, 1.9), { depth: D + 0.9, bevelEnabled: false }).translate(0, H + 0.5, -(D + 0.9) / 2), col));
-  p.push(custom(new THREE.ShapeGeometry(gableShape(W, 1.7)).translate(0, H + 0.5, D / 2 + 0.47), trim));
+  p.push(custom(new THREE.ExtrudeGeometry(gableShape(W, 1.85), { depth: D, bevelEnabled: false }).translate(0, H + 0.5, -D / 2), trim));
+  p.push(roofSlab(W + 1.0, 2.1, D + 1.0, 0.35, roofCol, H + 0.42));
+  p.push(box(0.4, 0.3, D + 1.1, WHITE, 0, H + 0.42 + 1.95, 0));
   p.push(box(1.5, 3.0, 0.12, trim, 0, 0.5, D / 2 + 0.06), box(1.2, 2.7, 0.1, col, 0, 0.62, D / 2 + 0.12), ballC(0.1, GOLD, 0.45, 2.0, D / 2 + 0.2, 0));
   p.push(vdisc(0.42, 0xbfe8ff, 0, H + 1.15, D / 2 + 0.5, 12));
   return p;
@@ -1782,8 +1914,8 @@ function palm(K, h, lean) {
 function sailboat() {
   const hull = [rbox(4.6, 1.0, 1.8, 0xff5a6e, 0, 0, 0, 0.4), box(4.0, 0.2, 1.4, 0xfff3e0, 0, 0.95, 0), box(4.4, 0.18, 1.82, WHITE, 0, 0.62, 0)];
   const mast = [cyl(0.09, 0.09, 6.2, 0x9a6a42, 0.3, 1.0, 0, 6)];
-  const sail = [tris([[0.4, 1.4, 0], [0.4, 7.0, 0], [2.6, 1.5, 0]], WHITE, new THREE.Vector3(0, 0, 1)), tris([[0.2, 1.6, 0], [0.2, 6.2, 0], [-1.9, 1.6, 0]], 0xffe3ee, new THREE.Vector3(0, 0, 1))];
-  const flag = [tris([[0.35, 7.2, 0], [0.35, 6.7, 0], [1.1, 6.95, 0]], 0x4fa3ff, new THREE.Vector3(0, 0, 1))];
+  const sail = twoSided([tris([[0.4, 1.4, 0], [0.4, 7.0, 0], [2.6, 1.5, 0]], WHITE, new THREE.Vector3(0, 0, 1)), tris([[0.2, 1.6, 0], [0.2, 6.2, 0], [-1.9, 1.6, 0]], 0xffe3ee, new THREE.Vector3(0, 0, 1))]);
+  const flag = twoSided([tris([[0.35, 7.2, 0], [0.35, 6.7, 0], [1.1, 6.95, 0]], 0x4fa3ff, new THREE.Vector3(0, 0, 1))]);
   return [...hull, ...mast, ...sail, ...flag];
 }
 

@@ -4,7 +4,7 @@ import { Renderer } from './engine/render.js';
 import { Input } from './engine/input.js';
 import * as AudioMod from './engine/audio.js';
 import { Round } from './game/round.js';
-import { LEVELS } from './game/levels.js';
+import { LEVELS } from './game/allLevels.js';
 import { loadSave, writeSave, totalStars, exportProgress, importProgress } from './game/save.js';
 import { skinById, animateSkin } from './game/skins.js';
 import { UI } from './ui/ui.js';
@@ -64,6 +64,9 @@ function newRound(opts) {
   round.skin = skin;
   round.ringFx = makeProgressRing(skin.color);
   round.player.mesh.add(round.ringFx);
+  // Compile this world's shaders now (behind the intro card / menu) so the first
+  // seconds of play never stutter on a phone.
+  try { renderer.r.compile(renderer.scene, renderer.camera); } catch (e) { console.error('precompile', e); }
   tickSec = -1; tooBigHints = 0;
   window.__game = { round, renderer, phys, save, LEVELS, startLevel, startZen, showZen };
   return round;
