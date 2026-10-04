@@ -7,7 +7,7 @@ import { Input } from './engine/input.js';
 import * as AudioMod from './engine/audio.js';
 import { Round } from './game/round.js';
 import { LEVELS } from './game/allLevels.js';
-import { loadSave, writeSave, totalStars, exportProgress, importProgress } from './game/save.js';
+import { loadSave, writeSave, totalStars, exportProgress, importProgress, resetLevels, restoreLevels, hasLevelBackup } from './game/save.js';
 import { skinById, animateSkin } from './game/skins.js';
 import { UI } from './ui/ui.js';
 import { PROPS } from './game/props.js';
@@ -265,6 +265,9 @@ function home() {
       save, onToggle: toggle, onBack: home, credits: AudioMod.CREDITS,
       onExport: () => exportProgress(save),
       onImport: (code) => { importProgress(save, code); writeSave(save); recolorPlayer(); },
+      canRestore: hasLevelBackup(),
+      onReset: () => { resetLevels(save); writeSave(save); },
+      onRestore: () => { const ok = restoreLevels(save); if (ok) writeSave(save); return ok; },
     }),
     onBook: () => ui.book({ groups: bookGroups(), eaten: save.eaten, onBack: home }),
   });

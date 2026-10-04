@@ -28,6 +28,28 @@ export function loadSave() {
 export function writeSave(s) {
   try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) { /* private mode: progress lives for this session only */ }
 }
+// "Start over" (Kyle 2026-10-04: she blasted through 43 levels before the game got harder).
+// Clears level stars + best times so every level is fresh and unlocks in order again.
+// Keeps the Gulp Book, hole colors, Zen/race records and settings. The old stars are kept
+// in a backup so "Bring back my old stars" can undo it.
+const BACKUP_KEY = 'gulp.save.backup';
+export function resetLevels(s) {
+  try { localStorage.setItem(BACKUP_KEY, JSON.stringify({ stars: s.stars, best: s.best })); } catch (e) { /* private mode */ }
+  s.stars = {}; s.best = {};
+}
+export function hasLevelBackup() {
+  try { return !!localStorage.getItem(BACKUP_KEY); } catch (e) { return false; }
+}
+export function restoreLevels(s) {
+  let b = null;
+  try { b = JSON.parse(localStorage.getItem(BACKUP_KEY)); } catch (e) { b = null; }
+  if (!b) return false;
+  // merge, so anything earned since the reset is kept too
+  for (const [id, n] of Object.entries(b.stars || {})) s.stars[id] = Math.max(s.stars[id] || 0, n | 0);
+  for (const [id, t] of Object.entries(b.best || {})) if (typeof t === 'number') s.best[id] = s.best[id] === undefined ? t : Math.min(s.best[id], t);
+  try { localStorage.removeItem(BACKUP_KEY); } catch (e) { /* ignore */ }
+  return true;
+}
 export const totalStars = (s) => Object.values(s.stars).reduce((a, b) => a + b, 0);
 
 // Progress transfer between Safari and the Home Screen app (iOS keeps them apart),

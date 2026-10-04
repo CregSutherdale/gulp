@@ -252,13 +252,16 @@ export class UI {
       e.stopPropagation(); s.classList.toggle('on'); this.audio.tap(); onToggle(s.dataset.k, s.classList.contains('on'));
     }));
   }
-  settings({ save, onToggle, onBack, credits, onExport, onImport }) {
+  settings({ save, onToggle, onBack, credits, onExport, onImport, onReset, onRestore, canRestore }) {
     const el = $(`<div class="screen dim"><div class="panel"><h2>Settings</h2>
       ${this.toggles(save, true)}
       <div class="xfer"><div class="sub" style="margin:10px 0 8px">Moving to the Home Screen app or a new phone?</div>
         <div class="row" style="flex-wrap:nowrap"><button class="btn sky small" data-a="export" style="flex:1">Copy my progress</button><button class="btn ghost small" data-a="import" style="flex:1">Paste progress</button></div>
         <textarea class="code hidden" id="xfercode" rows="3" spellcheck="false" aria-label="Progress code"></textarea>
         <div class="xmsg"></div></div>
+      <div class="xfer"><div class="sub" style="margin:12px 0 8px">Want to play every level again from the start?</div>
+        <div class="row" style="flex-wrap:nowrap"><button class="btn small" data-a="reset" style="flex:1">Start over</button>${canRestore ? '<button class="btn ghost small" data-a="restore" style="flex:1">Bring back my old stars</button>' : ''}</div>
+        <div class="rmsg"></div></div>
       <div class="credits">${String(credits || 'Music by HydroGene.').replace(/&/g, '&amp;').replace(/</g, '&lt;').split('\n').join('<br>')}<br>Made with love for Amanda by Creg.</div>
       <div class="col" style="margin-top:16px"><button class="btn mint" data-a="back" data-focus>Done</button></div></div></div>`);
     this.bindToggles(el, onToggle); this.on(el, '[data-a=back]', onBack);
@@ -276,6 +279,18 @@ export class UI {
       }
       try { onImport(box.value); msg.textContent = 'Progress added! ♡'; } catch (e) { msg.textContent = "That code didn't work. Copy it again and paste the whole thing."; }
     });
+    // Start over: two taps (the first one just asks), so it can't happen by accident.
+    const rmsg = el.querySelector('.rmsg'); let armed = 0;
+    this.on(el, '[data-a=reset]', (b) => {
+      if (Date.now() - armed > 5000) { armed = Date.now(); b.textContent = 'Tap again to clear my stars'; rmsg.textContent = 'This clears your level stars and best times. Your Gulp Book and hole colors stay.'; return; }
+      armed = 0; onReset(); b.textContent = 'Start over'; rmsg.textContent = 'Fresh start! Level 1 is ready. Changed your mind? Tap Bring back my old stars.';
+      if (!el.querySelector('[data-a=restore]')) {
+        const r = document.createElement('button'); r.className = 'btn ghost small'; r.dataset.a = 'restore'; r.style.flex = '1'; r.textContent = 'Bring back my old stars';
+        b.parentElement.appendChild(r);
+        r.addEventListener('click', () => { if (onRestore()) { r.remove(); rmsg.textContent = 'Your old stars are back.'; } });
+      }
+    });
+    this.on(el, '[data-a=restore]', (b) => { if (onRestore()) { b.remove(); rmsg.textContent = 'Your old stars are back.'; } });
     return this.show(el);
   }
   skins({ save, stars, onPick, onBack }) {

@@ -73,6 +73,14 @@
   await click('[data-a=settings]', 'title: Settings');
   await click('.switch[data-k=relaxed]', 'settings: Relaxed toggle');
   await click('.switch[data-k=relaxed]', 'settings: Relaxed toggle back');
+  // Start over: first tap only asks, second clears, then Bring back restores (Kyle 10/04)
+  const starsBefore = JSON.stringify(JSON.parse(localStorage.getItem('gulp.save.v1') || '{}').stars || {});
+  await click('[data-a=reset]', 'settings: Start over (asks first)');
+  steps.push((JSON.stringify(JSON.parse(localStorage.getItem('gulp.save.v1')).stars) === starsBefore ? 'ok   ' : 'MISS ') + 'first tap did not clear anything');
+  await click('[data-a=reset]', 'settings: Start over (confirm)');
+  steps.push((Object.keys(JSON.parse(localStorage.getItem('gulp.save.v1')).stars).length === 0 ? 'ok   ' : 'MISS ') + 'stars cleared');
+  await click('[data-a=restore]', 'settings: Bring back my old stars');
+  steps.push((JSON.stringify(JSON.parse(localStorage.getItem('gulp.save.v1')).stars) === starsBefore ? 'ok   ' : 'MISS ') + 'old stars restored');
   await click('[data-a=export]', 'settings: Copy my progress');
   const code = q('#xfercode')?.value || '';
   steps.push((code.startsWith('GULP-') ? 'ok   ' : 'MISS ') + 'progress code produced');
