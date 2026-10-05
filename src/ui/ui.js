@@ -124,8 +124,7 @@ export class UI {
   hudLevel(round, onPause, helpers, onHelper) {
     this.hud.innerHTML = '';
     const el = $(`<div class="layer">
-      <div class="hud"><div class="tchips">${this.chips(round.targets, true)}</div><button class="btn ghost round pause" aria-label="Pause">❚❚</button></div>
-      <div class="timer">${fmt(round.left)}</div>
+      <div class="hud"><div class="tchips">${this.chips(round.targets, true)}</div><div class="timer">${fmt(round.left)}</div><button class="btn ghost round pause" aria-label="Pause">❚❚</button></div>
       <div class="helpers">${HELPERS.map((h) => `<button class="helper" data-h="${h.id}" aria-label="${h.name}" ${helpers[h.id] ? '' : 'disabled'}>${h.svg}<span class="hn">${h.name}</span><b>${helpers[h.id] || 0}</b></button>`).join('')}</div></div>`);
     el.querySelector('.pause').addEventListener('click', (e) => { e.stopPropagation(); this.audio.tap(); onPause(); });
     el.querySelectorAll('.helper').forEach((b) => b.addEventListener('click', (e) => {
@@ -152,8 +151,7 @@ export class UI {
   }
   hudRace(round, onPause) {
     this.hud.innerHTML = '';
-    const el = $(`<div class="layer"><div class="hud"><div class="board"></div><button class="btn ghost round pause" aria-label="Pause">❚❚</button></div>
-      <div class="timer">${fmt(round.left)}</div></div>`);
+    const el = $(`<div class="layer"><div class="hud"><div class="board"></div><div class="timer">${fmt(round.left)}</div><button class="btn ghost round pause" aria-label="Pause">❚❚</button></div></div>`);
     el.querySelector('.pause').addEventListener('click', (e) => { e.stopPropagation(); this.audio.tap(); onPause(); });
     this.hud.append(el);
     this.hudEls = { timer: el.querySelector('.timer'), board: el.querySelector('.board') };
