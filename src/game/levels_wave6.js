@@ -484,9 +484,11 @@ export const LEVELS = LIST.map((L) => ({ ...L, place: L.place.flat().filter((op)
 //   times: CHALLENGE seconds, grow: CHALLENGE growth multiplier (default 0.6),
 //   pars: CHALLENGE [3-star, 2-star], relaxedPars: Easy-mode [3-star, 2-star].
 export const TUNING = {
-  times: {},
+  // Measured 2026-10-05 with validate_cli: B = slower of two CHALLENGE bot clears, E = Easy clear.
+  // times = ceil5(1.32 * B + 6); pars = [ceil5(B + 3), ceil5(1.15 * B + 5)]; relaxedPars = [ceil5(2.2E + 15), ceil5(3.4E + 25)].
+  times: { 91: 55, 92: 80, 93: 75, 94: 80, 95: 90, 96: 55, 97: 70, 98: 110, 99: 90, 100: 85, 101: 60, 102: 85, 103: 65, 104: 75, 105: 85 },
   // TIGHT SQUEEZE growth: 0.55 on every board, a touch more on the finales (centerpiece gate).
   grow: { 91: 0.55, 92: 0.55, 93: 0.55, 94: 0.55, 95: 0.57, 96: 0.55, 97: 0.55, 98: 0.55, 99: 0.55, 100: 0.57, 101: 0.55, 102: 0.55, 103: 0.55, 104: 0.55, 105: 0.58 },
-  pars: {},
-  relaxedPars: {},
+  pars: { 91: [40, 45], 92: [60, 70], 93: [55, 65], 94: [60, 70], 95: [65, 75], 96: [40, 50], 97: [50, 60], 98: [80, 95], 99: [65, 80], 100: [65, 75], 101: [45, 55], 102: [65, 75], 103: [50, 60], 104: [55, 65], 105: [60, 75] },
+  relaxedPars: { 91: [65, 100], 92: [110, 170], 93: [105, 165], 94: [105, 165], 95: [120, 190], 96: [80, 120], 97: [95, 145], 98: [125, 195], 99: [135, 210], 100: [105, 165], 101: [75, 120], 102: [120, 185], 103: [80, 120], 104: [105, 165], 105: [115, 180] },
 };

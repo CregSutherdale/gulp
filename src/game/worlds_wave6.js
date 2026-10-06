@@ -236,7 +236,7 @@ function spa(K) {
     const side = i % 4, t = K.rnd(-1, 1);
     const x = side < 2 ? t * (hw + 1.6) : (side === 2 ? -1 : 1) * (hw + 1.6 + K.rnd(0, 0.4));
     const z = side < 2 ? (side === 0 ? -1 : 1) * (hd + 1.6 + K.rnd(0, 0.4)) : t * (hd + 1.6);
-    peb.push(egg(K.rnd(0.18, 0.3), 0.1, K.rnd(0.15, 0.25), K.pick([0xe8e2da, 0xd6d0c8, 0xf4f0ea, 0xcfd8d4]), x, 0.04, z, 6, 4));
+    peb.push(egg(K.rnd(0.12, 0.2), 0.08, K.rnd(0.1, 0.17), K.pick([0xe8e2da, 0xd6d0c8, 0xf4f0ea, 0xcfd8d4]), x, 0.03, z, 9, 5));
   }
   M.push(...peb);
 
@@ -299,6 +299,13 @@ function spa(K) {
   const nz = hd + 2.6 + 1.2 * ns;
   M.push(...put([rbox(4.2, 0.12, 2.0, 0xffc4d6, 0, 0, 0, 0.06)], -hw * 0.45, 0, nz, 0.08, ns));
   for (const s of [-1, 1]) M.push(...put([egg(0.32, 0.06, 0.75, 0x6fd0e0, 0, 0.06, 0, 10, 4), custom(new THREE.TorusGeometry(0.2, 0.04, 4, 10, PI).translate(0, 0.12, -0.3), 0xffffff)], hw * 0.5 + s * 0.45, 0, nz + 0.2, 0.2, ns));
+  // a low basket of rolled towels and a little stack of smooth stones
+  const bk = [lathe([[0, 0], [1.1, 0], [1.3, 0.55], [1.2, 0.55], [1.0, 0.06], [0, 0.06]], 0xd8b37a, 16)];
+  [[-0.45, 0.1, 0xff9ec0], [0.45, 0.1, 0x9fd8f0], [0, -0.35, 0xfff0b0], [0, 0.5, 0xffffff]].forEach(([x, z, c]) => bk.push(custom(new THREE.CylinderGeometry(0.28, 0.28, 0.9, 10).rotateZ(PI / 2).translate(x, 0.45, z), c)));
+  K.add(bk, -hw * 0.08, 0, nz + 1.2, 0.3, ns); K.blob(-hw * 0.08, 0.02, nz + 1.2, 1.4 * ns, 1.2 * ns, 0.3);
+  const st = [];
+  [[0.75, 0.3], [0.6, 0.25], [0.45, 0.22], [0.3, 0.18]].reduce((y, [r, h], i) => { st.push(egg(r, h / 2, r * 0.8, [0x9aa6a4, 0xb8c2c0, 0x8e9a98, 0xc8d0ce][i], 0, y + h / 2, 0, 12, 6)); return y + h * 0.9; }, 0);
+  K.add(st, hw * 0.28, 0, nz + 1.0, 0, ns); K.blob(hw * 0.28, 0.02, nz + 1.0, 0.9 * ns, 0.8 * ns, 0.3);
   const pet = [];
   for (let i = 0; i < 40; i++) { const [x, z] = K.around(1.7, 9, 5); pet.push(egg(0.14, 0.02, 0.09, K.pick([0xff9ec0, 0xffc4d6, 0xffffff]), x, 0.03, z, 6, 3)); }
   M.push(...pet);

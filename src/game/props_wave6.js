@@ -15,6 +15,10 @@ import { cyl, cone, ball, custom, TINT } from './geo.js';
 const TAU = Math.PI * 2, PI = Math.PI;
 
 // ------------------------------------------------------------------ palette
+// The engine multiplies the instance tint into EVERY part (render.js patchProps never
+// matches; see docs/season6/NOTES.md), so props whose color is in the baked details use
+// near-white tints: they look exactly as authored, with a faint warm/cool variation.
+const NEUTRAL = [0xffffff, 0xfff5ec, 0xf1f6ff, 0xfffbe8, 0xf3fff3];
 const WHITE = 0xfffaf4, CREAM = 0xfff0d4, INK = 0x3b2d3f, BLUSH = 0xff9eb8;
 const WOOD = 0xd39a5e, WOOD_D = 0x9e6a3e, WOOD_L = 0xeec58e;
 const GOLD = 0xffc94a, SILVER = 0xe1e7ef, LEAF = 0x5cb85c, LEAF_D = 0x3f8f4a, STEM = 0x7a5a32;
@@ -301,11 +305,11 @@ def('towelstack', {
 
 def('bathstool', {
   label: 'Bath Stool', col: { t: 'cyl', r: 0.6, h: 0.72 }, fit: 1.2, value: 2, mass: 0.4,
-  tints: [0x9fd8c8, 0xffb3c8, 0xc9b2ff, 0xffe08a, 0x9fd2ff],
+  tints: NEUTRAL,
   build: () => {
     const p = [
-      lathe([[0, 0], [0.56, 0], [0.6, 0.04], [0.6, 0.09], [0.56, 0.12], [0, 0.12]], TINT, 0, 0.6, 0, 20),
-      pale(tor(0.4, 0.02, TINT, 0, 0.72, 0, PI / 2, 0, 0, 3, 18), 0.5),
+      lathe([[0, 0], [0.56, 0], [0.6, 0.04], [0.6, 0.09], [0.56, 0.12], [0, 0.12]], 0x9fd8c8, 0, 0.6, 0, 20),
+      tor(0.4, 0.02, TINT, 0, 0.72, 0, PI / 2, 0, 0, 3, 18),
     ];
     for (let i = 0; i < 3; i++) {
       const a = i * TAU / 3 + 0.5;
@@ -318,14 +322,14 @@ def('bathstool', {
 
 def('spabucket', {
   label: 'Wash Bucket', col: { t: 'cyl', r: 0.72, h: 1.2 }, fit: 1.44, value: 3, mass: 0.5,
-  tints: [GOLD, 0xff8fb1, 0x7fc8f8, 0x8fdcab, 0xc9b2ff],
+  tints: NEUTRAL,
   build: () => {
     const body = latheGeo([[0, 0], [0.55, 0], [0.66, 0.78], [0.6, 0.78], [0.5, 0.08], [0, 0.08]], 20);
     const p = [...multi(body, (x, y, z) => Math.floor((Math.atan2(z, x) + PI) / TAU * 20) % 2, [WOOD, WOOD_L])];
-    for (const [y, R] of [[0.18, 0.575], [0.6, 0.635]]) p.push(tor(R, 0.035, TINT, 0, y, 0, PI / 2, 0, 0, 4, 22));
+    for (const [y, R] of [[0.18, 0.575], [0.6, 0.635]]) p.push(tor(R, 0.035, GOLD, 0, y, 0, PI / 2, 0, 0, 4, 22));
     p.push(lathe([[0, 0], [0.62, 0], [0, 0.001]], WATER, 0, 0.68, 0, 18));
     // foam on the water, a dipper resting in the bucket
-    for (let i = 0; i < 7; i++) { const a = i * 0.9; p.push(egg(0.13, 0.08, 0.13, FOAM, 0.38 * Math.sin(a), 0.72, 0.38 * Math.cos(a), 0, 0, 0, 8, 5)); }
+    for (let i = 0; i < 7; i++) { const a = i * 0.9; p.push(egg(0.13, 0.08, 0.13, TINT, 0.38 * Math.sin(a), 0.72, 0.38 * Math.cos(a), 0, 0, 0, 8, 5)); }
     p.push(tcyl(0.03, 0.03, 0.6, WOOD_D, 0.18, 0.9, -0.12, 0, 0, -0.6, 6));
     p.push(lathe([[0, 0], [0.13, 0.02], [0.15, 0.14], [0, 0.12]], WOOD_L, -0.03, 0.66, -0.12, 10));
     return p;
@@ -334,15 +338,15 @@ def('spabucket', {
 
 def('spabench', {
   label: 'Spa Bench', col: { t: 'box', w: 3.0, h: 1.22, d: 1.1 }, fit: 3.2, value: 16, mass: 4,
-  tints: [0xa8e0d0, 0xffc4d6, 0xd0c0ff, 0xfff0b0],
+  tints: NEUTRAL,
   build: () => {
     const p = [];
     for (const sx of [-1.3, 1.3]) for (const sz of [-0.42, 0.42]) p.push(rb(0.14, 0.42, 0.14, WOOD_D, sx, 0, sz, 0.03));
     for (let i = 0; i < 5; i++) p.push(rb(2.96, 0.08, 0.18, i % 2 ? WOOD : WOOD_L, 0, 0.42, -0.44 + i * 0.22, 0.03));
     p.push(rb(2.8, 0.08, 0.1, WOOD_D, 0, 0.18, 0, 0.03));
     // a cushion pad, a towel stack, two candles and a basket of soaps
-    p.push(rb(1.1, 0.12, 0.9, TINT, -0.8, 0.5, 0, 0.05));
-    [[0, TINT], [0.2, WHITE], [0.4, TINT]].forEach(([y, c], k) => p.push(k === 2 ? pale(rb(0.7 - k * 0.06, 0.2, 0.62, c, -0.85, 0.62 + y, 0, 0.07), 0.6) : rb(0.7 - k * 0.06, 0.2, 0.62, c, -0.85, 0.62 + y, 0, 0.07)));
+    p.push(rb(1.1, 0.12, 0.9, 0xa8e0d0, -0.8, 0.5, 0, 0.05));
+    [[0, 0xffc4d6], [0.2, TINT], [0.4, 0xfff0b0]].forEach(([y, c], k) => p.push(rb(0.7 - k * 0.06, 0.2, 0.62, c, -0.85, 0.62 + y, 0, 0.07)));
     for (const [x, z, h] of [[0.25, -0.2, 0.36], [0.55, 0.15, 0.26]]) {
       p.push(tcyl(0.13, 0.13, h, 0xfff4e0, x, 0.5 + h / 2, z, 0, 0, 0, 12));
       p.push(egg(0.035, 0.07, 0.035, 0xffb42e, x, 0.5 + h + 0.08, z, 0, 0, 0, 6, 4));
@@ -498,46 +502,49 @@ def('patchgourd', {
 
 def('hayroll', {
   label: 'Hay Roll', col: { t: 'box', w: 1.2, h: 1.2, d: 1.2 }, fit: 1.7, value: 5, mass: 1.5,
-  tints: [0xe8402e, 0x3f8fe8, 0x5fc04a, 0xffd23a],
+  tints: NEUTRAL,
   build: () => {
     const body = new THREE.CylinderGeometry(0.6, 0.6, 1.16, 18, 4).rotateZ(PI / 2).translate(0, 0.6, 0);
     const p = [...multi(body, (x, y, z) => Math.floor(Math.atan2(z, y - 0.6) * 4 + x * 9) % 2, [HAY, HAY_D])];
     for (const s of [-1, 1]) {
       p.push(tcyl(0.59, 0.59, 0.02, HAY_D, s * 0.58, 0.6, 0, 0, 0, PI / 2, 18));
       for (const [R, c] of [[0.42, HAY], [0.24, 0xe6bd55]]) p.push(tor(R, 0.035, c, s * 0.59, 0.6, 0, 0, PI / 2, 0, 3, 16));
-      p.push(tor(0.596, 0.02, TINT, s * 0.3, 0.6, 0, 0, PI / 2, 0, 3, 20));
+      p.push(tor(0.596, 0.02, 0xe8402e, s * 0.3, 0.6, 0, 0, PI / 2, 0, 3, 20));
     }
     for (let i = 0; i < 6; i++) p.push(egg(0.03, 0.09, 0.03, 0xf8dc80, -0.4 + i * 0.16, 1.15, 0.05 * (i % 2 ? 1 : -1), 0.3 * (i % 2 ? 1 : -1), 0, 0.3, 4, 3));
+    p.push(tbox(0.12, 0.08, 0.02, TINT, 0.3, 0.75, 0.6));
     return p;
   },
 });
 
 def('applebasket', {
   label: 'Apple Basket', col: { t: 'cyl', r: 0.62, h: 1.08 }, fit: 1.24, value: 3, mass: 0.5,
-  tints: APPLES,
+  tints: NEUTRAL,
   build: () => {
     const body = latheGeo([[0, 0], [0.45, 0], [0.6, 0.55], [0.56, 0.55], [0.42, 0.06], [0, 0.06]], 18);
     const p = [...multi(body, (x, y, z) => (Math.floor(y / 0.09) + Math.floor((Math.atan2(z, x) + PI) / TAU * 18)) % 2, [WOOD_L, WOOD])];
     p.push(tor(0.59, 0.035, WOOD_D, 0, 0.55, 0, PI / 2, 0, 0, 4, 20));
     [[0, 0.68, 0], [0.26, 0.6, 0.18], [-0.27, 0.6, 0.15], [0.2, 0.6, -0.26], [-0.2, 0.6, -0.25], [0.02, 0.6, 0.33]].forEach(([x, y, z], i) => {
-      p.push(i === 4 ? pale(egg(0.15, 0.14, 0.15, TINT, x, y, z, 0, 0, 0, 10, 7), 0.15) : egg(0.15, 0.14, 0.15, TINT, x, y, z, 0, 0, 0, 10, 7));
+      p.push(egg(0.15, 0.14, 0.15, [0xe8333f, 0x8fd14f, 0xe8333f, 0xffd447, 0xb0243c, 0xe8333f][i], x, y, z, 0, 0, 0, 10, 7));
       p.push(tcyl(0.012, 0.012, 0.06, STEM, x, y + 0.16, z, 0, 0, 0, 4));
     });
     p.push(tor(0.5, 0.03, WOOD_D, 0, 0.55, 0, 0, 0, 0, 4, 16, PI));
+    // a cloth napkin tucked over the front rim
+    p.push(egg(0.26, 0.04, 0.16, TINT, 0.05, 0.56, 0.5, 0.5, 0.2, 0, 8, 4));
     return p;
   },
 });
 
 def('scarebuddy', {
   label: 'Scarecrow Pal', col: { t: 'box', w: 1.2, h: 2.0, d: 0.5 }, fit: 1.3, value: 3, mass: 0.8,
-  tints: [0xe8573a, 0x3f8fe8, 0x5fb85a, 0xffb82e, 0x9a6ad8],
+  tints: NEUTRAL,
   build: () => {
     const p = [
       rb(0.1, 1.5, 0.1, WOOD_D, 0, 0, -0.04, 0.02),
       tcyl(0.04, 0.04, 1.04, WOOD_D, 0, 1.25, -0.04, 0, 0, PI / 2, 6),
-      rb(0.46, 0.55, 0.28, TINT, 0, 0.82, 0, 0.1),
-      shade(rb(0.14, 0.14, 0.02, TINT, 0.1, 1.0, 0.14, 0.02), 0xd0d0d0),
-      tcyl(0.1, 0.12, 0.4, TINT, -0.37, 1.25, 0, 0, 0, PI / 2, 8), tcyl(0.1, 0.12, 0.4, TINT, 0.37, 1.25, 0, 0, 0, -PI / 2, 8),
+      rb(0.46, 0.55, 0.28, 0xe8573a, 0, 0.82, 0, 0.1),
+      rb(0.14, 0.14, 0.02, TINT, 0.1, 1.0, 0.14, 0.02),
+      tcyl(0.1, 0.12, 0.4, 0xe8573a, -0.37, 1.25, 0, 0, 0, PI / 2, 8), tcyl(0.1, 0.12, 0.4, 0xe8573a, 0.37, 1.25, 0, 0, 0, -PI / 2, 8),
       rb(0.34, 0.36, 0.24, 0x5a7ad0, 0, 0.5, 0, 0.08),
       egg(0.2, 0.2, 0.19, 0xf0d8a8, 0, 1.58, 0, 0, 0, 0, 12, 8),
       ...face(0, 1.6, 0.18, 0.07, 0.024),
@@ -555,10 +562,10 @@ def('scarebuddy', {
 
 def('pumpkincart', {
   label: 'Pumpkin Cart', col: { t: 'box', w: 2.3, h: 1.46, d: 1.32 }, fit: 2.65, value: 11, mass: 2.5,
-  tints: [0xe8402e, 0x3f8fe8, 0x5fb85a, 0xffc23a],
+  tints: NEUTRAL,
   build: () => {
     const p = [
-      rb(1.6, 0.36, 1.0, TINT, -0.2, 0.42, 0, 0.05),
+      rb(1.6, 0.36, 1.0, 0xe8402e, -0.2, 0.42, 0, 0.05),
       rb(1.5, 0.04, 0.9, WOOD_L, -0.2, 0.78, 0, 0.02),
     ];
     for (const s of [-1, 1]) {
@@ -568,7 +575,7 @@ def('pumpkincart', {
       p.push(tbox(0.06, 0.4, 0.06, WOOD_D, 0.42, 0.2, s * 0.36));
     }
     // pumpkins piled in the bed
-    [[-0.6, 0.82, 0.18, 0.3, 0xff8a1f], [-0.05, 0.82, -0.15, 0.32, 0xff9a2e], [0.4, 0.82, 0.2, 0.26, 0xfff3e0], [-0.35, 1.04, -0.1, 0.25, 0xffa53a]].forEach(([x, y, z, r, c]) => {
+    [[-0.6, 0.82, 0.18, 0.3, 0xff8a1f], [-0.05, 0.82, -0.15, 0.32, 0xff9a2e], [0.4, 0.82, 0.2, 0.26, TINT], [-0.35, 1.04, -0.1, 0.25, 0xffa53a]].forEach(([x, y, z, r, c]) => {
       p.push(ribbed(r, 0.66, 8, 0.12, c, x, y, z, 12, 7));
       p.push(tcyl(0.03, 0.045, 0.1, STEM, x, y + r * 1.32 + 0.04, z, 0, 0, 0.2, 5));
     });
@@ -578,11 +585,11 @@ def('pumpkincart', {
 
 def('haywagon', {
   label: 'Hay Wagon', col: { t: 'box', w: 4.2, h: 2.1, d: 2.0 }, fit: 4.65, value: 35, mass: 8,
-  tints: [0xd8402e, 0x3f7fd8, 0x4fae5a, 0xe8b02e],
+  tints: NEUTRAL,
   build: () => {
-    const p = [rb(3.3, 0.4, 1.6, TINT, -0.3, 0.55, 0, 0.06)];
+    const p = [rb(3.3, 0.4, 1.6, 0xd8402e, -0.3, 0.55, 0, 0.06)];
     for (const s of [-1, 1]) {
-      p.push(rb(3.3, 0.38, 0.08, TINT, -0.3, 0.95, s * 0.76, 0.03));
+      p.push(rb(3.3, 0.38, 0.08, 0xd8402e, -0.3, 0.95, s * 0.76, 0.03));
       for (let i = 0; i < 4; i++) p.push(rb(0.08, 0.38, 0.1, WOOD_L, -1.85 + i * 1.033, 0.95, s * 0.8, 0.02));
       for (const x of [-1.3, 0.75]) {
         p.push(tcyl(0.5, 0.5, 0.12, WOOD_D, x, 0.5, s * 0.92, PI / 2, 0, 0, 10));
@@ -603,11 +610,11 @@ def('haywagon', {
 
 def('prizepumpkin', {
   label: 'Prize Pumpkin', col: { t: 'cyl', r: 2.6, h: 3.6 }, fit: 5.2, value: 43, mass: 18,
-  tints: [0xff8a1f, 0xfff3e0, 0xffc23a, 0xe8553a],
+  tints: NEUTRAL,
   build: () => {
     const p = [
-      ribbed(2.3, 0.64, 12, 0.11, TINT, 0, 0, 0, 30, 12),
-      pale(egg(0.5, 0.15, 0.5, TINT, 0, 2.9, 0, 0, 0, 0, 10, 4), 0.35),
+      ribbed(2.3, 0.64, 12, 0.11, 0xff8a1f, 0, 0, 0, 30, 12),
+      egg(0.5, 0.15, 0.5, 0xffb060, 0, 2.9, 0, 0, 0, 0, 10, 4),
       tcyl(0.2, 0.32, 0.7, STEM, 0.06, 3.22, 0, 0, 0, -0.18, 8),
       tor(0.3, 0.05, LEAF_D, 0.55, 3.05, 0.3, 0.3, 0.5, 0, 3, 14, PI * 1.6),
     ];
@@ -617,7 +624,7 @@ def('prizepumpkin', {
     // the blue ribbon rosette on the front
     const rz = 2.02, ry = 1.4;
     p.push(vprism(starPts(0.42, 0.78, 12), 0.05, 0x2f6fe8, 0, ry, rz + 0.02, 0, 0));
-    p.push(tcyl(0.27, 0.27, 0.06, 0xfff4e0, 0, ry, rz + 0.05, PI / 2, 0, 0, 16), tcyl(0.18, 0.18, 0.08, GOLD, 0, ry, rz + 0.06, PI / 2, 0, 0, 14));
+    p.push(tcyl(0.27, 0.27, 0.06, TINT, 0, ry, rz + 0.05, PI / 2, 0, 0, 16), tcyl(0.18, 0.18, 0.08, GOLD, 0, ry, rz + 0.06, PI / 2, 0, 0, 14));
     for (const s of [-1, 1]) p.push(vprism([[0, 0], [0.16, 0], [0.16, -0.6], [0.08, -0.5], [0, -0.6]], 0.03, 0x2f6fe8, s * 0.06 - 0.08, ry - 0.2, rz + 0.05, s * 0.12));
     p.push(...face(0, 2.1, 1.82, 0.32, 0.09));
     return p;
@@ -666,7 +673,7 @@ def('minicane', {
     const shaft = new THREE.CylinderGeometry(R, R, 0.34, 10, 6).rotateZ(PI / 2).translate(-0.07, R, 0);
     const hook = new THREE.TorusGeometry(0.075, R, 8, 12, PI).rotateX(-PI / 2).rotateY(-PI / 2).translate(0.1, R, -0.075);
     const p = [];
-    for (const g of [shaft, hook]) { const k = multi(g, stripe, [TINT, WHITE]); p.push(...k); }
+    for (const g of [shaft, hook]) { const k = multi(g, stripe, [TINT, TINT]); p.push(k[0], k[1] && shade(k[1], 0x8a8a8a)); }
     void H;
     return C(p);
   },
@@ -761,30 +768,32 @@ def('toydrum', {
 
 def('wreath', {
   label: 'Wreath', col: { t: 'cyl', r: 0.6, h: 0.3 }, fit: 1.2, value: 2, mass: 0.3,
-  tints: [0xe8333f, 0xffc83a, 0x3f8fff, 0xb06ae8, 0xff7ab8],
+  tints: NEUTRAL,
   build: () => {
     const p = [tor(0.44, 0.14, 0x2f8f4a, 0, 0.14, 0, PI / 2, 0, 0, 6, 20)];
-    for (let i = 0; i < 18; i++) { const a = i * TAU / 18, rr = 0.44 + (i % 2 ? 0.07 : -0.07); p.push(egg(0.1, 0.035, 0.05, i % 3 ? 0x3fae5a : 0x237a3e, rr * Math.sin(a), 0.24, rr * Math.cos(a), 0, a + 0.6, 0.2, 6, 4)); }
+    for (let i = 0; i < 14; i++) { const a = i * TAU / 14, rr = 0.44 + (i % 2 ? 0.07 : -0.07); p.push(egg(0.11, 0.035, 0.055, i % 3 ? 0x3fae5a : 0x237a3e, rr * Math.sin(a), 0.24, rr * Math.cos(a), 0, a + 0.6, 0.2, 6, 4)); }
     for (let i = 0; i < 9; i++) { const a = i * TAU / 9 + 0.2, rr = 0.44 + (i % 2 ? 0.1 : -0.06); p.push(spark(0.035, 0xe8333f, rr * Math.sin(a), 0.26, rr * Math.cos(a))); }
     for (const s of [-1, 1]) {
-      p.push(tor(0.08, 0.035, TINT, s * 0.1, 0.22, 0.46, 0, s * 0.3, 0, 5, 12));
-      p.push(shade(prism([[0, 0], [0.06, 0], [0.1 * s, 0.1], [0.06 * s - 0.02, 0.12]], 0.025, TINT, s * 0.02, 0.2, 0.48), 0xd0d0d0));
+      p.push(tor(0.08, 0.035, 0xe8333f, s * 0.1, 0.22, 0.46, 0, s * 0.3, 0, 5, 12));
+      p.push(shade(prism([[0, 0], [0.06, 0], [0.1 * s, 0.1], [0.06 * s - 0.02, 0.12]], 0.025, 0xc82a36, s * 0.02, 0.2, 0.48), 0xd0d0d0));
     }
-    p.push(egg(0.05, 0.05, 0.05, TINT, 0, 0.22, 0.46, 0, 0, 0, 8, 6));
+    p.push(egg(0.05, 0.05, 0.05, 0xe8333f, 0, 0.22, 0.46, 0, 0, 0, 8, 6));
+    // a dusting of snow on the leaves
+    for (let i = 0; i < 7; i++) { const a = i * TAU / 7 + 0.5; p.push(egg(0.06, 0.02, 0.04, TINT, 0.44 * Math.sin(a), 0.28, 0.44 * Math.cos(a), 0, a, 0, 6, 3)); }
     return C(p);
   },
 });
 
 def('giftstack', {
   label: 'Gift Stack', col: { t: 'box', w: 1.2, h: 1.5, d: 1.0 }, fit: 1.56, value: 4, mass: 0.5,
-  tints: WRAP,
+  tints: NEUTRAL,
   build: () => {
     const p = [
-      rb(1.1, 0.6, 0.9, TINT, 0, 0, 0, 0.04),
+      rb(1.1, 0.6, 0.9, 0xe8333f, 0, 0, 0, 0.04),
       tbox(1.12, 0.61, 0.1, 0xfffaf2, 0, 0.3, 0), tbox(0.1, 0.61, 0.92, 0xfffaf2, 0.2, 0.3, 0),
-      rb(0.78, 0.44, 0.66, 0xfffaf2, -0.05, 0.6, 0.02, 0.04),
-      tbox(0.8, 0.45, 0.08, TINT, -0.05, 0.825, 0.02), tbox(0.08, 0.45, 0.68, TINT, -0.05, 0.825, 0.02),
-      pale(rb(0.5, 0.32, 0.44, TINT, 0.02, 1.04, -0.02, 0.03), 0.4),
+      rb(0.78, 0.44, 0.66, TINT, -0.05, 0.6, 0.02, 0.04),
+      tbox(0.8, 0.45, 0.08, 0xe8333f, -0.05, 0.825, 0.02), tbox(0.08, 0.45, 0.68, 0xe8333f, -0.05, 0.825, 0.02),
+      rb(0.5, 0.32, 0.44, 0x2fae5a, 0.02, 1.04, -0.02, 0.03),
       tbox(0.52, 0.33, 0.06, GOLD, 0.02, 1.2, -0.02), tbox(0.06, 0.33, 0.46, GOLD, 0.02, 1.2, -0.02),
     ];
     for (const s of [-1, 1]) p.push(tor(0.07, 0.028, GOLD, 0.02 + s * 0.07, 1.42, -0.02, 0, s * 0.4, 0, 4, 10));
@@ -794,7 +803,7 @@ def('giftstack', {
 
 def('toysled', {
   label: 'Toy Sled', col: { t: 'box', w: 1.56, h: 0.65, d: 0.84 }, fit: 1.77, value: 5, mass: 0.6,
-  tints: [0xe8333f, 0x2fae5a, 0x3f8fff, 0xffc83a],
+  tints: NEUTRAL,
   build: () => {
     const p = [];
     for (const s of [-1, 1]) {
@@ -802,47 +811,47 @@ def('toysled', {
       p.push(tor(0.2, 0.03, 0xc8d0dc, 0.55, 0.22, s * 0.32, 0, 0, 0, 4, 10, PI * 0.8), tor(0.2, 0.03, 0xc8d0dc, 0.55, 0.22, s * 0.32, 0, 0, -PI / 2, 4, 6, PI * 0.3));
       for (const x of [-0.55, 0.15]) p.push(tbox(0.05, 0.22, 0.05, WOOD_D, x, 0.16, s * 0.32));
     }
-    for (let i = 0; i < 5; i++) p.push(rb(0.22, 0.05, 0.72, i % 2 ? TINT : WOOD_L, -0.55 + i * 0.25, 0.27, 0, 0.02));
-    p.push(rb(1.25, 0.05, 0.08, TINT, -0.05, 0.27, 0.38, 0.02), rb(1.25, 0.05, 0.08, TINT, -0.05, 0.27, -0.38, 0.02));
+    for (let i = 0; i < 5; i++) p.push(rb(0.22, 0.05, 0.72, i % 2 ? 0xe8333f : WOOD_L, -0.55 + i * 0.25, 0.27, 0, 0.02));
+    p.push(rb(1.25, 0.05, 0.08, 0xe8333f, -0.05, 0.27, 0.38, 0.02), rb(1.25, 0.05, 0.08, 0xe8333f, -0.05, 0.27, -0.38, 0.02));
     p.push(tor(0.3, 0.018, 0xc0503a, 0.62, 0.32, 0, 0, PI / 2, 0, 3, 12, PI));
     // a scarf left on the seat
-    p.push(...multi(new THREE.BoxGeometry(0.6, 0.04, 0.2, 6, 1, 1).translate(-0.3, 0.33, 0.05), (x) => Math.floor((x + 1) / 0.1) % 2, [0xffffff, 0x3f8fff]));
+    p.push(...multi(new THREE.BoxGeometry(0.6, 0.04, 0.2, 6, 1, 1).translate(-0.3, 0.33, 0.05), (x) => Math.floor((x + 1) / 0.1) % 2, [TINT, 0x3f8fff]));
     return C(p);
   },
 });
 
 def('giftsleigh', {
   label: 'Gift Sleigh', col: { t: 'box', w: 2.8, h: 1.76, d: 1.55 }, fit: 3.2, value: 16, mass: 5,
-  tints: [0xd8283a, 0x2fa05a, 0x3f7fe8, 0xe8b02e],
+  tints: NEUTRAL,
   build: () => {
     const side = [[-1.4, 0.3], [0.7, 0.3], [1.1, 0.5], [1.35, 0.9], [1.2, 1.15], [1.0, 1.0], [0.75, 0.75], [-0.6, 0.8], [-1.0, 1.35], [-1.4, 1.35]];
     const p = [];
     for (const s of [-1, 1]) {
-      p.push(vprism(side, 0.1, TINT, 0, 0, s * 0.62));
+      p.push(vprism(side, 0.1, 0xd8283a, 0, 0, s * 0.62));
       p.push(vprism(side.map(([u, v]) => [u * 0.9 - 0.05, v * 0.88 + 0.08]), 0.02, GOLD, 0, 0.0, s * 0.68));
       // curly golden runners
       p.push(tbox(2.4, 0.06, 0.08, GOLD, -0.2, 0.03, s * 0.72));
       p.push(tor(0.28, 0.04, GOLD, 1.0, 0.31, s * 0.72, 0, 0, 0, 4, 12, PI * 1.2));
       for (const x of [-0.9, 0.3]) p.push(tbox(0.06, 0.3, 0.06, GOLD, x, 0.18, s * 0.72));
     }
-    p.push(rb(2.0, 0.12, 1.2, TINT, -0.25, 0.3, 0, 0.04), rb(0.7, 0.3, 1.18, 0xfff4e8, -0.7, 0.42, 0, 0.1), rb(0.15, 0.55, 1.18, 0xfff4e8, -1.15, 0.6, 0, 0.06));
+    p.push(rb(2.0, 0.12, 1.2, 0xd8283a, -0.25, 0.3, 0, 0.04), rb(0.7, 0.3, 1.18, TINT, -0.7, 0.42, 0, 0.1), rb(0.15, 0.55, 1.18, 0xfff4e8, -1.15, 0.6, 0, 0.06));
     // presents piled in the back
     [[-0.95, 0.72, -0.25, 0.5, 0.42, 0x3f8fff, 0.1], [-0.4, 0.72, 0.2, 0.55, 0.45, 0xffc83a, -0.2], [-0.75, 1.14, 0.1, 0.42, 0.38, 0xb06ae8, 0.3], [0.2, 0.42, -0.2, 0.5, 0.4, 0x2fae5a, 0.2], [-0.95, 0.72, 0.38, 0.32, 0.3, 0xff7ab8, 0]].forEach(([x, y, z, w, h, c, ry]) => {
       p.push(rb(w, h, w, c, x, y, z, 0.03));
       p.push(tbox(w + 0.01, h + 0.01, 0.05, 0xfffaf2, x, y + h / 2, z, 0, ry * 0, 0), tbox(0.05, h + 0.01, w + 0.01, 0xfffaf2, x, y + h / 2, z));
     });
-    for (const s of [-1, 1]) p.push(tor(0.12, 0.04, TINT, -0.75 + s * 0.12, 1.6, 0.1, 0, s * 0.4, 0, 4, 10));
-    p.push(egg(0.06, 0.06, 0.06, TINT, -0.75, 1.58, 0.1, 0, 0, 0, 6, 4));
+    for (const s of [-1, 1]) p.push(tor(0.12, 0.04, 0xffc83a, -0.75 + s * 0.12, 1.6, 0.1, 0, s * 0.4, 0, 4, 10));
+    p.push(egg(0.06, 0.06, 0.06, 0xffc83a, -0.75, 1.58, 0.1, 0, 0, 0, 6, 4));
     return C(p);
   },
 });
 
 def('holidaytree', {
   label: 'Holiday Tree', col: { t: 'cyl', r: 2.6, h: 6.6 }, fit: 5.2, value: 43, mass: 16,
-  tints: [0xe8333f, 0xffc83a, 0x3f8fff, 0xb06ae8],
+  tints: NEUTRAL,
   build: () => {
     const p = [
-      lathe([[0, 0], [2.0, 0], [2.0, 0.04], [0, 0.04]], 0xfaf6ee, 0, 0, 0, 20),
+      lathe([[0, 0], [2.0, 0], [2.0, 0.04], [0, 0.04]], TINT, 0, 0, 0, 20),
       lathe([[2.0, 0], [2.55, 0], [2.55, 0.035], [2.0, 0.035]], 0xd8283a, 0, 0, 0, 20),
       tcyl(0.3, 0.36, 1.0, 0x8a5a32, 0, 0.5, 0, 0, 0, 0, 10),
     ];
@@ -855,12 +864,12 @@ def('holidaytree', {
     }
     let k = 0;
     for (const [y, R, n] of [[0.9, 1.95, 9], [2.05, 1.55, 8], [3.1, 1.15, 7], [4.05, 0.75, 5], [4.9, 0.45, 3]]) for (let i = 0; i < n; i++, k++) {
-      const a = i * TAU / n + y, c = k % 3 === 0 ? TINT : [0xfff4e8, 0xc8d4e8, 0xff7ab8][k % 3];
+      const a = i * TAU / n + y, c = k % 3 === 0 ? 0xe8333f : [0xfff4e8, 0xc8d4e8, 0xff7ab8][k % 3];
       p.push(ball(0.16, c, R * Math.sin(a), y - 0.1, R * Math.cos(a), 0));
     }
     p.push(vprism(starPts(0.5, 0.45, 5), 0.16, GOLD, 0, 6.05, 0, 0, 0.03), tcyl(0.06, 0.06, 0.25, GOLD, 0, 5.9, 0, 0, 0, 0, 6));
     // presents at the foot
-    [[1.2, 0.6, 0.55, TINT], [-1.3, 0.4, 0.45, 0x3f8fff], [0.2, 1.4, 0.4, 0xb06ae8], [-0.4, -1.5, 0.5, 0xffc83a]].forEach(([x, z, s, c]) => {
+    [[1.2, 0.6, 0.55, 0xe8333f], [-1.3, 0.4, 0.45, 0x3f8fff], [0.2, 1.4, 0.4, 0xb06ae8], [-0.4, -1.5, 0.5, 0xffc83a]].forEach(([x, z, s, c]) => {
       p.push(rb(s, s * 0.9, s, c, x, 0.04, z, 0.03), tbox(s + 0.01, s * 0.9 + 0.01, 0.06, 0xfffaf2, x, 0.04 + s * 0.45, z), tbox(0.06, s * 0.9 + 0.01, s + 0.01, 0xfffaf2, x, 0.04 + s * 0.45, z));
     });
     return p;
