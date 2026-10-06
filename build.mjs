@@ -65,7 +65,7 @@ const html = `<!doctype html>
 <canvas id="confetti"></canvas>
 <div id="loading" class="loading"><div class="hole"></div><p>Getting hungry…</p></div>
 <script>window.__GULP_BUILD='${hash}';</script>
-<script>function gulpLoadFailed(){var l=document.getElementById('loading');if(l){l.innerHTML='<div class="hole"></div><p>Couldn't load the game.<br>Tap to try again.</p>';l.onclick=function(){location.reload();};}}</script>
+<script>function gulpLoadFailed(){var l=document.getElementById('loading');if(l){l.innerHTML='<div class="hole"></div><p>Couldn&rsquo;t load the game.<br>Tap to try again.</p>';l.onclick=function(){location.reload();};}}</script>
 <script src="${jsName}" defer onerror="gulpLoadFailed()"></script>
 </body></html>
 `;

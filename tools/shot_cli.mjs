@@ -45,7 +45,7 @@ let id = 0; const pending = new Map(); const errs = [];
 ws.addEventListener('message', (ev) => {
   const m = JSON.parse(ev.data);
   if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
-  if (m.method === 'Runtime.exceptionThrown') errs.push(m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text);
+  if (m.method === 'Runtime.exceptionThrown') { const d = m.params.exceptionDetails; errs.push(`${d.exception?.description || d.text} @ ${d.url || d.scriptId}:${d.lineNumber}:${d.columnNumber}`); }
   if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') errs.push(m.params.args.map((a) => a.value ?? a.description).join(' '));
 });
 const cdp = (method, params = {}) => new Promise((r) => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
