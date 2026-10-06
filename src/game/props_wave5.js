@@ -1001,7 +1001,7 @@ def('gramophone', {
 
 def('grandpiano', {
   label: 'Grand Piano', col: { t: 'box', w: 2.8, h: 3.55, d: 4.24 }, fit: 5.08, value: 41, mass: 6,
-  tints: [0x3b3346, 0xfff6ee, 0xff9cc2, 0x8fc8ff],
+  tints: [0xfff6ee, 0xffc4d8, 0xbfdcff, 0xd8c4ff],
   build: () => {
     // footprint: straight left side, the curved right side, keyboard at the front (+z)
     const shape = [[-1.35, 1.2], [1.35, 1.2], [1.35, 0.3]];
