@@ -514,12 +514,13 @@ const STARTER = { pets: ['kibble', FIVE], aquarium: ['tankpebble', SIX], music: 
 const starter = (L) => { if (L.id === 76) return []; const [id, t] = STARTER[L.world]; return path(id, arcF(L.start[0], L.start[1], 1.9, PI * 1.17, PI * 1.83), 0.6, t); }; // 76 opens on its kibble trail
 export const LEVELS = LIST.map((L) => ({ ...L, place: [...L.place.flat(), ...starter(L)] }));
 
-// Per-level CHALLENGE tuning (filled from validator runs: see docs/season5/TUNING.md).
+// Per-level CHALLENGE tuning, measured 2026-10-05 (docs/season5/mA/mB/mE logs): B = slower bot
+// clear of two CHALLENGE runs, E = bot clear in an Easy run.
 //   times: ceil5(1.35 * B + 6), B = slower bot clear of two CHALLENGE runs
 //   pars:  [ceil5(B + 3), ceil5(1.15B + 5)]     relaxedPars: Easy run E -> [ceil5(2.2E + 15), ceil5(3.4E + 25)]
 export const TUNING = {
-  times: {},
+  times: { 76: 80, 77: 65, 78: 75, 79: 85, 80: 90, 81: 80, 82: 90, 83: 60, 84: 80, 85: 95, 86: 75, 87: 75, 88: 75, 89: 85, 90: 90 },
   grow: { 76: 0.6, 77: 0.55, 78: 0.58, 79: 0.57, 80: 0.62, 81: 0.6, 82: 0.55, 83: 0.58, 84: 0.6, 85: 0.68, 86: 0.6, 87: 0.57, 88: 0.57, 89: 0.55, 90: 0.62 },
-  pars: {},
-  relaxedPars: {},
+  pars: { 76: [60, 70], 77: [45, 55], 78: [55, 65], 79: [60, 70], 80: [65, 75], 81: [60, 70], 82: [65, 80], 83: [45, 50], 84: [60, 65], 85: [70, 80], 86: [55, 65], 87: [55, 60], 88: [55, 65], 89: [60, 75], 90: [65, 75] },
+  relaxedPars: { 76: [105, 160], 77: [80, 120], 78: [105, 165], 79: [115, 175], 80: [125, 195], 81: [90, 140], 82: [135, 210], 83: [90, 135], 84: [110, 165], 85: [135, 210], 86: [95, 145], 87: [85, 135], 88: [100, 160], 89: [120, 190], 90: [125, 190] },
 };

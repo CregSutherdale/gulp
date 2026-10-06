@@ -347,7 +347,7 @@ function pets(K) {
 
 // ============================================================== UNDER THE SEA
 const sandTex = (R) => canvasTex(128, (x, s) => {
-  x.fillStyle = '#ead6a2'; x.fillRect(0, 0, s, s);
+  x.fillStyle = '#dcc28a'; x.fillRect(0, 0, s, s);
   speckle(x, s, R, 18);
   x.strokeStyle = 'rgba(190,160,100,.3)'; x.lineWidth = 2;
   for (let i = 0; i < 4; i++) { x.beginPath(); for (let k = 0; k <= s; k += 6) x.lineTo(k, i * s / 4 + 8 + Math.sin((k / s) * TAU * 2 + i) * 4); x.stroke(); }
