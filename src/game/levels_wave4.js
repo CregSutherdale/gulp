@@ -425,14 +425,14 @@ function anyTArr(n, nt, t) { const R = rng(n * 31 + t); return Array.from({ leng
 export const LEVELS = LIST.map((L) => ({ ...L, place: L.place.flat() }));
 
 // Per-level tuning (filled from validator runs; see the brief):
-//   times: CHALLENGE seconds = ceil5(1.4 * B + 6), B = slower bot clear of two CHALLENGE runs
+//   times: CHALLENGE seconds = ceil5(1.4 * B + 6), B = slowest bot clear over the CHALLENGE runs (at least two)
 //   grow: CHALLENGE growth multiplier (default 0.6)
 //   pars: CHALLENGE [3-star, 2-star] = [ceil5(B + 3), ceil5(1.15B + 5)]
 //   relaxedPars: Easy [3-star, 2-star] = [ceil5(2.2E + 15), ceil5(3.4E + 25)], E = Easy bot clear
 export const TUNING = {
   grow: { 61: 0.55, 62: 0.55, 63: 0.55, 64: 0.55, 65: 0.55, 66: 0.55, 67: 0.55, 68: 0.55, 69: 0.55, 70: 0.55, 71: 0.55, 72: 0.55, 73: 0.55, 74: 0.55, 75: 0.55 },
-  // measured 2026-10-05: B = slower of two CHALLENGE runs at the growth above, E = Easy run
-  times: { 61: 95, 62: 75, 63: 70, 64: 80, 65: 120, 66: 75, 67: 115, 68: 85, 69: 70, 70: 110, 71: 90, 72: 105, 73: 80, 74: 80, 75: 120 },
-  pars: { 61: [65, 80], 62: [50, 60], 63: [50, 60], 64: [55, 65], 65: [85, 100], 66: [55, 65], 67: [85, 95], 68: [60, 70], 69: [50, 60], 70: [80, 90], 71: [65, 75], 72: [75, 85], 73: [55, 65], 74: [55, 65], 75: [85, 100] },
+  // measured 2026-10-05: B = slowest of four CHALLENGE runs at the growth above (one run caught a stall on 74), E = Easy run
+  times: { 61: 95, 62: 75, 63: 70, 64: 80, 65: 120, 66: 75, 67: 115, 68: 85, 69: 70, 70: 115, 71: 90, 72: 105, 73: 85, 74: 100, 75: 120 },
+  pars: { 61: [65, 80], 62: [50, 60], 63: [50, 60], 64: [55, 65], 65: [85, 100], 66: [55, 65], 67: [85, 95], 68: [60, 70], 69: [50, 60], 70: [80, 95], 71: [65, 75], 72: [75, 85], 73: [60, 70], 74: [70, 80], 75: [85, 100] },
   relaxedPars: { 61: [100, 155], 62: [105, 160], 63: [105, 160], 64: [100, 150], 65: [120, 185], 66: [95, 150], 67: [135, 210], 68: [100, 155], 69: [85, 135], 70: [145, 225], 71: [115, 175], 72: [120, 185], 73: [90, 140], 74: [95, 150], 75: [150, 230] },
 };
