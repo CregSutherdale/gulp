@@ -53,7 +53,7 @@ export const WORLDS = {
   castle: {
     // Pale periwinkle courtyard flagstones with white grout: saturated gems pop on it.
     label: 'Fairy Castle', sky: 0xe6dcff, hemiSky: 0xfaf6ff, hemiGround: 0xc9c4ea, surround: 0x9fdc8f, wall: 0xffffff, accent: '#b58cff',
-    tile: 3, floor: (x, w, h) => {
+    tile: 6, floor: (x, w, h) => {
       x.fillStyle = '#f4f2ff'; x.fillRect(0, 0, w, h);
       const n = 3, s = w / n, pal = ['#d6dcf2', '#d0d4ee', '#dce0f5', '#d3d8f0', '#dad6f2'];
       for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
@@ -535,8 +535,8 @@ function PIZZA(K) {
 
   // near strip (seen at every start): flat flour dust, basil leaves, a pizza cutter
   const nz = (hd + 1.2 + TZN) / 2, dots = [];
-  for (let i = 0; i < 40; i++) dots.push([K.rnd(-hw - 3, hw + 3), 0.015, K.rnd(hd + 1.2, TZN - 1.1), K.rnd(0.2, 0.7), 0xfdf8ef, 8, 1, K.rnd(0.6, 1)]);
-  for (let i = 0; i < 10; i++) dots.push([K.rnd(-hw, hw), 0.03, K.rnd(hd + 1.4, TZN - 1.2), 0.22, 0x3fae4a, 6, 1.8, 1, K.R() * PI]);
+  for (let i = 0; i < 70; i++) dots.push([K.rnd(-hw - 3, hw + 3), 0.015, K.rnd(hd + 1.2, TZN - 1.1), K.rnd(0.05, 0.16), K.pick([0xfdf8ef, 0xf4e6cf]), 7, 1, K.rnd(0.6, 1)]);
+  for (let i = 0; i < 10; i++) dots.push([K.rnd(-hw, hw), 0.03, K.rnd(hd + 1.4, TZN - 1.2), 0.16, 0x3fae4a, 8, 1.8, 1, K.R() * PI]);
   K.flat.push(discBatch(dots));
   K.add([cyl(0.6, 0.6, 0.08, 0xdfe6ef, 0, 0, 0, 16), rod([0, 0.08, 0], [1.6, 0.12, 0.3], 0.12, 0.12, 0xc8553d, 8)], -hw * 0.5, 0, nz, 0.4, ns);
   K.add(pz(1.1), hw * 0.5, 0, nz, 0, ns);
@@ -644,11 +644,11 @@ function CASTLE(K) {
   K.shadow = 0x4a6a4a;
   const G = K.glossy;
   const X0 = hw + 0.5, Z0 = hd + 0.5, PB = 2.6, PX = X0 + PB, PZ = Z0 + PB;
-  const dots = [], STONE = [0xf3eefc, 0xe9e2f7, 0xfaf6ff, 0xe2dbf2];
+  const dots = [], STONE = [0xe6def2, 0xdfd6ee, 0xebe4f6, 0xd9d0ea];
   K.flat.push(rectXZ(-PX, PX, Z0, PZ, 0.02, 0xd8cfe8), rectXZ(-PX, PX, -PZ, -Z0, 0.02, 0xd8cfe8), rectXZ(X0, PX, -Z0, Z0, 0.02, 0xd8cfe8), rectXZ(-PX, -X0, -Z0, Z0, 0.02, 0xd8cfe8));
-  for (let z = -PZ + 0.5, row = 0; z < PZ; z += 0.95, row++) for (let x = -PX + 0.5 + (row % 2) * 0.47; x < PX; x += 0.95) {
+  for (let z = -PZ + 0.35, row = 0; z < PZ; z += 0.7, row++) for (let x = -PX + 0.35 + (row % 2) * 0.35; x < PX; x += 0.7) {
     if (Math.abs(x) < X0 + 0.1 && Math.abs(z) < Z0 + 0.1) continue;
-    dots.push([x, 0.03, z, K.rnd(0.36, 0.42), K.pick(STONE), 6, 1, 1, K.R()]);
+    dots.push([x, 0.03, z, K.rnd(0.27, 0.31), K.pick(STONE), 8, 1, 1, K.R()]);
   }
   for (let i = 0; i < 46; i++) { const [x, z] = K.around(PB + 2, 30, 18); dots.push([x, 0.01 + (i % 4) * 0.01, z, K.rnd(1.6, 4.0), K.pick([0x9fdc8f, 0xa9e39a, 0x93d184, 0xb3e8a4]), 12, 1, K.rnd(0.6, 1), K.R() * PI]); }
   for (let i = 0; i < 140; i++) { const [x, z] = K.around(PB + 1.2, 26, 18); dots.push([x, 0.09, z, 0.13, K.pick([0xffffff, 0xffd6ec, 0xfff2a8, 0xd9c6ff]), 5]); }

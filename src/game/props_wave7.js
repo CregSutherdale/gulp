@@ -202,7 +202,7 @@ const CHEESES = [0xffd23f, 0xff9f2e, 0xfff0b8, 0xffe680];
 
 def('pepperoni', {
   label: 'Pepperoni', col: { t: 'cyl', r: 0.2, h: 0.07 }, fit: 0.4, value: 1, mass: 0.15,
-  tints: [0xe0403a, 0xff8a3d, 0xff7fa8, 0x9a5a3a, 0xb8324a],
+  tints: [0xe0403a, 0xff8a3d, 0xff7fa8, 0x9a5a3a, 0x8e2440],
   build: () => {
     const p = [lathe([[0, 0], [0.18, 0], [0.2, 0.02], [0.195, 0.05], [0.16, 0.07], [0, 0.068]], TINT, 0, 0, 0, 18)];
     for (const [x, z] of [[0.06, 0.04], [-0.07, 0.06], [-0.02, -0.08], [0.09, -0.06], [-0.1, -0.02]]) p.push(pale(spark(0.022, TINT, x, 0.064, z), 0.45));
