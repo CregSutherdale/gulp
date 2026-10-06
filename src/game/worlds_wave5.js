@@ -55,9 +55,9 @@ export const WORLDS = {
       x.fillStyle = '#f2e2b4'; x.fillRect(0, 0, w, h);
       noise(x, w, h, 14);
       x.strokeStyle = 'rgba(200,170,110,.35)'; x.lineWidth = 3;
-      for (let i = 0; i < 7; i++) { x.beginPath(); for (let k = 0; k <= w; k += 8) x.lineTo(k, i * h / 7 + 10 + Math.sin(k * 0.045 + i * 1.7) * 6); x.stroke(); }
+      for (let i = 0; i < 7; i++) { x.beginPath(); for (let k = 0; k <= w; k += 8) x.lineTo(k, i * h / 7 + 10 + Math.sin((k / w) * TAU * 3 + i * 1.7) * 6); x.stroke(); }
       x.strokeStyle = 'rgba(255,255,255,.35)'; x.lineWidth = 2;
-      for (let i = 0; i < 7; i++) { x.beginPath(); for (let k = 0; k <= w; k += 8) x.lineTo(k, i * h / 7 + 13 + Math.sin(k * 0.045 + i * 1.7) * 6); x.stroke(); }
+      for (let i = 0; i < 7; i++) { x.beginPath(); for (let k = 0; k <= w; k += 8) x.lineTo(k, i * h / 7 + 13 + Math.sin((k / w) * TAU * 3 + i * 1.7) * 6); x.stroke(); }
       const peb = ['#ff9ec0', '#8fd0ff', '#ffe27a', '#9fe6b8', '#c9b2ff'];
       for (let i = 0; i < 18; i++) { x.fillStyle = peb[i % 5]; x.beginPath(); x.ellipse(((i * 97) % 251) * w / 256, ((i * 61 + 17) % 249) * h / 256, 3.5, 2.6, i, 0, TAU); x.fill(); }
     },
@@ -73,7 +73,7 @@ export const WORLDS = {
         x.fillRect(((i * 89) % 200) + 20, i * h / planks, 2, h / planks);
       }
       x.strokeStyle = 'rgba(150,90,40,.12)'; x.lineWidth = 1;
-      for (let k = 0; k < 18; k++) { const y0 = (k * 37) % h; x.beginPath(); for (let i = 0; i <= w; i += 8) x.lineTo(i, y0 + Math.sin(i * 0.03 + k) * 2.5); x.stroke(); }
+      for (let k = 0; k < 18; k++) { const y0 = (k * 37) % h; x.beginPath(); for (let i = 0; i <= w; i += 8) x.lineTo(i, y0 + Math.sin((i / w) * TAU * 2 + k) * 2.5); x.stroke(); }
       noise(x, w, h, 8);
     },
   },
@@ -350,7 +350,7 @@ const sandTex = (R) => canvasTex(128, (x, s) => {
   x.fillStyle = '#ead6a2'; x.fillRect(0, 0, s, s);
   speckle(x, s, R, 18);
   x.strokeStyle = 'rgba(190,160,100,.3)'; x.lineWidth = 2;
-  for (let i = 0; i < 4; i++) { x.beginPath(); for (let k = 0; k <= s; k += 6) x.lineTo(k, i * s / 4 + 8 + Math.sin(k * 0.098 + i) * 4); x.stroke(); }
+  for (let i = 0; i < 4; i++) { x.beginPath(); for (let k = 0; k <= s; k += 6) x.lineTo(k, i * s / 4 + 8 + Math.sin((k / s) * TAU * 2 + i) * 4); x.stroke(); }
 });
 function rockPile(K, n, s, cols) {
   const out = [];

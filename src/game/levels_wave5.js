@@ -508,7 +508,11 @@ const LIST = [
   },
 ];
 
-export const LEVELS = LIST.map((L) => ({ ...L, place: L.place.flat() }));
+// Every board opens with a little arc of the world's tiniest filler just ahead of the
+// hole, so the first second of play is eating, not driving across empty floor.
+const STARTER = { pets: ['kibble', FIVE], aquarium: ['tankpebble', SIX], music: ['guitarpick', RB7] };
+const starter = (L) => { if (L.id === 76) return []; const [id, t] = STARTER[L.world]; return path(id, arcF(L.start[0], L.start[1], 1.9, PI * 1.17, PI * 1.83), 0.6, t); }; // 76 opens on its kibble trail
+export const LEVELS = LIST.map((L) => ({ ...L, place: [...L.place.flat(), ...starter(L)] }));
 
 // Per-level CHALLENGE tuning (filled from validator runs: see docs/season5/TUNING.md).
 //   times: ceil5(1.35 * B + 6), B = slower bot clear of two CHALLENGE runs
