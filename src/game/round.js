@@ -20,6 +20,7 @@ export class Round {
     this.phys = phys; this.renderer = renderer; this.kind = kind; this.events = events;
     this.level = level; this.autoSteer = autoSteer;
     this.time = 0; this.over = false; this.idleT = 0; this.paused = false;
+    this.started = false; this.waited = 0; // levels: the clock waits for her first move
     this.boost = { magnetT: 0, freezeT: 0 };
     this.overview = kind === 'level'; this.swoopT = 0;
     let data;
@@ -95,6 +96,12 @@ export class Round {
   update(dt, input) {
     if (this.over || this.paused) return;
     this.time += dt;
+    // Amanda (10/05): the level timer doesn't start until she moves. Time spent
+    // waiting is added back to the clock and left out of her star time.
+    if (this.kind === 'level' && !this.started) {
+      if (input && Math.hypot(input.x, input.z) > 0.05) this.started = true;
+      else { this.waited += dt; this.duration += dt; }
+    }
     if (this.boost.freezeT > 0) { this.boost.freezeT -= dt; this.frozen = (this.frozen || 0) + dt; if (this.duration) this.duration += dt; }
     if (this.boost.magnetT > 0) { this.boost.magnetT -= dt; this.magnet(dt); }
     if (this.duration) {
@@ -540,7 +547,7 @@ export class Round {
       if (h && h.alive) u[i].set(h.x, h.z, h.rShown, 1); else u[i].set(0, 0, 0, 0);
     }
   }
-  playTime() { return this.time - (this.frozen || 0); } // clock time that counts toward stars
+  playTime() { return this.time - (this.frozen || 0) - this.waited; } // clock time that counts toward stars
   progress() { return this.world.eatenValue / Math.max(1, this.world.totalValue); }
   standings() { return [...this.holes].sort((a, b) => b.score - a.score); }
   timeUp() {
