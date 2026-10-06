@@ -20,7 +20,7 @@ export class Icons {
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0xb0a8c0, 2.2));
     const d = new THREE.DirectionalLight(0xffffff, 2.2); d.position.set(3, 6, 4); this.scene.add(d);
     this.cam = new THREE.PerspectiveCamera(30, 1, 0.05, 200);
-    this.mat = patchProps(new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 38, specular: 0x2a2a2a }));
+    this.mat = patchProps(new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 38, specular: 0x2a2a2a }), { sink: false });
   }
   get(id, tint = 0) {
     const key = `${id}:${tint}`;

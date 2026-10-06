@@ -44,6 +44,13 @@ const tor = (R, t, col, x = 0, y = 0, z = 0, rx = PI / 2, ry = 0, rz = 0, rs = 6
 // Lathe from [radius, height] pairs listed bottom to top (outward-facing). Base at y.
 const lathe = (pts, col, x = 0, y = 0, z = 0, seg = 16, phi0 = 0, phiLen = TAU) =>
   custom(new THREE.LatheGeometry(pts.map(([r, h]) => new THREE.Vector2(r, h)), seg, phi0, phiLen).translate(x, y, z), col);
+// Re-tone a TINT part: vertex color = gray (darkens the tint), tmask = how much tint shows
+// (1 = full tint, 0.5 = half way to the gray). The shader multiplies by the instance color.
+function tone(g, gray = 0xffffff, mask = 1) {
+  const c = new THREE.Color(gray), col = g.attributes.color, m = g.attributes.tmask;
+  for (let i = 0; i < col.count; i++) { col.setXYZ(i, c.r, c.g, c.b); m.setX(i, mask); }
+  return g;
+}
 // Radius of a lathe profile at height y (for seating details on a surface).
 function lr(pts, y) {
   for (let i = 1; i < pts.length; i++) {
@@ -690,7 +697,8 @@ def('stackrings', {
     const p = [cyl(0.38, 0.4, 0.1, TINT, 0, 0, 0, 16), cyl(0.05, 0.05, 0.78, WOOD_L, 0, 0.1, 0, 8)];
     let y = 0.1;
     [[0.25, 0.1], [0.21, 0.088], [0.17, 0.076], [0.135, 0.066], [0.105, 0.056]].forEach(([R, t], i) => {
-      p.push(tor(R, t, RAINBOW[i], 0, y + t, 0, PI / 2, 0, 0, 6, 16)); y += 2 * t - 0.01;
+      // Rings alternate full tint / light tint so the toy's color reads at a glance.
+      p.push(tone(tor(R, t, TINT, 0, y + t, 0, PI / 2, 0, 0, 6, 16), 0xffffff, i % 2 ? 0.45 : 1)); y += 2 * t - 0.01;
     });
     p.push(ball(0.1, TINT, 0, y - 0.02, 0, 1));
     return p;
@@ -970,7 +978,7 @@ def('birdhouse', {
     cyl(0.26, 0.29, 0.08, WOOD_D, 0, 0, 0, 12),
     cyl(0.05, 0.05, 0.44, WOOD_D, 0, 0.08, 0, 8),
     rbox(0.46, 0.42, 0.42, TINT, 0, 0.5, 0, 0.04),
-    roof(0.6, 0.28, 0.54, 0xff6f61, 0, 0.92, 0),
+    tone(roof(0.6, 0.28, 0.54, TINT, 0, 0.92, 0), 0xd2d2d2),
     tcyl(0.08, 0.08, 0.03, INK, 0, 0.74, 0.21, PI / 2, 0, 0, 12),
     tcyl(0.015, 0.015, 0.08, WOOD_D, 0, 0.6, 0.24, PI / 2, 0, 0, 5),
     vprism(heartPts(0.1), 0.02, 0xff6f91, 0, 0.84, 0.215),
@@ -1289,8 +1297,8 @@ def('bottle', {
   tints: [0xff8fb0, 0x9b6545, 0xffd84a, 0x8fa8ff],
   build: () => [
     lathe([[0, 0], [0.17, 0], [0.19, 0.03], [0.19, 0.38], [0.16, 0.48], [0.09, 0.56], [0.085, 0.6], [0, 0.6]], 0xfffdf6, 0, 0, 0, 16),
-    cyl(0.196, 0.196, 0.16, TINT, 0, 0.12, 0, 16),
-    vprism(heartPts(0.12), 0.02, WHITE, 0, 0.15, 0.2),
+    cyl(0.196, 0.196, 0.26, TINT, 0, 0.07, 0, 16),
+    vprism(heartPts(0.12), 0.02, WHITE, 0, 0.14, 0.2),
     cyl(0.1, 0.1, 0.06, TINT, 0, 0.595, 0, 12),
   ],
 });
