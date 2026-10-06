@@ -486,16 +486,18 @@ export class Round {
       return { x: 0, y: dist * Math.sin(pitch), z: dist * Math.cos(pitch) + lz, lx: 0, lz };
     }
     const r = this.camR;
-    const share = THREE.MathUtils.lerp(0.23, 0.15, Math.min(1, (r - 0.5) / 6));
+    // Hole It framing (Amanda 10/05: 'copy that view'): the camera rides the hole, not
+    // the board. The hole is ~25% of the screen width at the start, easing to ~17% as it
+    // grows; steep near-overhead pitch; hole sits a little below centre so you see ahead.
+    // The level intro overview still shows the whole board, and target arrows guide the end.
+    const share = THREE.MathUtils.lerp(0.25, 0.17, Math.min(1, (r - 0.5) / 6));
     const tanH = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) * Math.min(cam.aspect, 1.1);
-    // Levels are small boards: always keep ~70% of the board's width in view so she
-    // can plan (like Hole It), and only pull back further as the hole grows.
-    const minD = this.kind === 'level' ? (this.world.size.w * 0.7 / 2) / tanH : this.kind === 'zenworld' ? (12 / 2) / tanH : 11;
-    // Amanda (10/05): 'too far away' -> sit ~13% closer in every play mode.
-    const D = Math.max(minD, r / (share * tanH)) * 0.87;
-    const pitch = THREE.MathUtils.degToRad(56);
-    const lead = 0.18;
-    return { x: p.x + p.vx * lead, y: D * Math.sin(pitch), z: p.z + p.vz * lead + D * Math.cos(pitch), lx: p.x + p.vx * lead, lz: p.z + p.vz * lead };
+    const minD = this.kind === 'race' ? 9.5 : 0; // race keeps rivals in view
+    const D = Math.max(minD, r / (share * tanH));
+    const pitch = THREE.MathUtils.degToRad(68);
+    const lead = 0.18, ahead = D * 0.1;
+    const lx = p.x + p.vx * lead, lz = p.z + p.vz * lead - ahead;
+    return { x: lx, y: D * Math.sin(pitch), z: lz + D * Math.cos(pitch), lx, lz };
   }
   snapCamera() {
     this.camR = this.player.rShown;
@@ -510,6 +512,12 @@ export class Round {
       if (this.camRT > 0.35) this.camR += (p.rShown - this.camR) * Math.min(1, dt * 2.5);
     } else this.camRT = 0;
     const c = this.camTarget();
+    // A 0-size canvas (backgrounded tab) gives aspect NaN; skip that frame, and if NaN
+    // already got into the camera, snap back instead of lerping NaN forever.
+    if (!Number.isFinite(c.y) || !Number.isFinite(c.z)) return;
+    if (!Number.isFinite(this.camPos.y) || !Number.isFinite(this.camPos.z) || !Number.isFinite(this.camPos.x)) {
+      this.camPos.set(c.x, c.y, c.z); this.camLook.set(c.lx, 0, c.lz);
+    }
     this.swoopT = Math.max(0, this.swoopT - dt);
     const k = 1 - Math.exp(-dt * (this.swoopT > 0 ? 2.4 : 7));
     this.camPos.x += (c.x - this.camPos.x) * k; this.camPos.z += (c.z - this.camPos.z) * k;
