@@ -42,6 +42,8 @@ const MUSIC_KEYS = {
 // </generated>
 
 export { MUSIC_KEYS };
+// Seasons 4+ map their worlds to tracks from worlds_waveN.js (allLevels.js registers them).
+export function registerMusicKeys(map) { Object.assign(MUSIC_KEYS, map); }
 
 export const CREDITS = [
   'Music',

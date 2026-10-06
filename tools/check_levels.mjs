@@ -22,7 +22,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PROPS_ONLY = process.argv.includes('--props');
-const WANT = process.argv.includes('--s1') ? [1] : process.argv.includes('--s2') ? [2] : process.argv.includes('--s3') ? [3] : [1, 2, 3];
+const SFLAG = [1, 2, 3, 4, 5, 6, 7].find((n) => process.argv.includes(`--s${n}`));
+const WANT = SFLAG ? [SFLAG] : [1, 2, 3, 4, 5, 6, 7];
 const CLEAR = 0.1;            // min gap between colliders
 const EDGE = 1.0;             // min distance from arena edge
 const START_CLEAR = 1.0;      // min gap between the start hole (r 0.5) and any object
@@ -32,6 +33,10 @@ const PACKS = [
   { name: 'cozy', season: 1, file: 'src/game/props_cozy.js' },
   { name: 'wave2', season: 2, file: 'src/game/props_wave2.js' },
   { name: 'wave3', season: 3, file: 'src/game/props_wave3.js' },
+  { name: 'wave4', season: 4, file: 'src/game/props_wave4.js' },
+  { name: 'wave5', season: 5, file: 'src/game/props_wave5.js' },
+  { name: 'wave6', season: 6, file: 'src/game/props_wave6.js' },
+  { name: 'wave7', season: 7, file: 'src/game/props_wave7.js' },
 ];
 const SEASONS = [
   { season: 1, file: 'src/game/levels.js', count: 30, firstId: 1, margin: 1.4, // filler must reach the largest target with 40% to spare
@@ -48,6 +53,13 @@ const SEASONS = [
     worlds: ['craft', 'fair', 'space'], pack: 'wave3',
     arena: { w: [20, 30], d: [28, 40] }, time: [120, 300], types: [2, 3], tintFrom: 46,
     ops: ['grid', 'ring', 'line', 'at'], centerpiece: { every: 5, minFit: 5 } },
+  // Seasons 4-7: the EXPERT seasons (Amanda beat all 60). Same house rules as Season 3;
+  // growth per level comes from each file's TUNING.grow (merged below). A season whose
+  // file has no levels yet is skipped.
+  ...[[4, 61, ['tea', 'florist', 'library']], [5, 76, ['pets', 'aquarium', 'music']], [6, 91, ['spa', 'pumpkin', 'holiday']], [7, 106, ['pizza', 'dino', 'castle']]].map(([season, firstId, worlds]) => (
+    { season, file: `src/game/levels_wave${season}.js`, count: 15, firstId, margin: 1.3, worlds, pack: `wave${season}`, optional: true,
+      arena: { w: [20, 32], d: [28, 42] }, time: [120, 300], types: [2, 4], tintFrom: firstId,
+      ops: ['grid', 'ring', 'line', 'at'], centerpiece: { every: 5, minFit: 5 } })),
 ];
 
 async function load(entry, tag) {
@@ -73,9 +85,12 @@ const M = await load(`
   export { PROPS, buildGeometry, colliderHalfHeight } from './src/game/props.js';
   ${PACKS.filter((p) => exists(p.file)).map((p) => `import './${p.file}';`).join('\n')}
   ${PROPS_ONLY ? '' : `export { buildLevel } from './src/game/levelbuild.js';
-  ${seasons.filter((s) => exists(s.file)).map((s) => `export { LEVELS as LEVELS_S${s.season} } from './${s.file}';`).join('\n')}`}
+  ${seasons.filter((s) => exists(s.file)).map((s) => `export { LEVELS as LEVELS_S${s.season} } from './${s.file}';`).join('\n')}
+  ${seasons.filter((s) => s.season >= 4 && exists(s.file)).map((s) => `export { TUNING as TUNING_S${s.season} } from './${s.file}';`).join('\n')}`}
 `, 'all');
 const { PROPS, buildGeometry, colliderHalfHeight } = M;
+// Seasons 4+ carry their own CHALLENGE growth (TUNING.grow); check at that growth.
+for (const s of seasons) if (M[`TUNING_S${s.season}`]) Object.assign(DIFF.GROW_BY_LEVEL, M[`TUNING_S${s.season}`].grow);
 
 // ------------------------------------------------------------------ prop ids (all files)
 // A def() with an id that already exists silently overwrites the earlier prop, so every
@@ -183,6 +198,7 @@ function gap(a, b) {
 function checkSeason(S) {
   const LEVELS = M[`LEVELS_S${S.season}`];
   if (!LEVELS) return;
+  if (S.optional && !LEVELS.length) { console.log(`season ${S.season}: not built yet (skipped)`); return; }
   const { buildLevel } = M;
   if (LEVELS.length !== S.count) fail(`season ${S.season}`, `expected ${S.count} levels, got ${LEVELS.length}`);
   const rows = [];

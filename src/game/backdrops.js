@@ -3803,6 +3803,9 @@ function starfield(K, hw, hd, n) {
 
 // ============================================================== entry
 const BUILDERS = { bakery, kitchen, playroom, picnic, garden, beach, candy, farm, snow, craft, fair, space };
+// Seasons 4+ keep their scenery in their own worlds_waveN.js; allLevels.js registers it.
+// A builder gets the same kit K as the ones above (K.add, K.blob, K.around, K.free, K.rnd...).
+export function registerBackdrops(map) { Object.assign(BUILDERS, map); }
 
 export function buildBackdrop(worldKey, arena, root) {
   const build = BUILDERS[worldKey];

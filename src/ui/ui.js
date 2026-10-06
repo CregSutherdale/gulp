@@ -80,8 +80,8 @@ export class UI {
       <div class="maptop"><button class="btn ghost round" data-a="back" aria-label="Back">‹</button><h2>Levels</h2><div class="starcount">★ ${stars}</div></div>
       ${byWorld.map((w, wi) => {
         const W = WORLDS[w.world];
-        // A season header above the first world of Season 2 (ids 31+) and Season 3 (ids 46+).
-        const seasonOf = (id) => (id >= 46 ? 3 : id >= 31 ? 2 : 1);
+        // A season header above the first world of each season after Season 1 (ids 31+, 46+, 61+...).
+        const seasonOf = (id) => (id <= 30 ? 1 : 2 + Math.floor((id - 31) / 15)); // 15 levels per season after Season 1
         const sn = seasonOf(w.list[0].id), newSeason = sn > 1 && (wi === 0 || seasonOf(byWorld[wi - 1].list[0].id) < sn);
         const ic = w.list[0].targets[0];
         const got = w.list.reduce((a, l) => a + (save.stars[l.id] || 0), 0);
