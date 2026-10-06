@@ -216,3 +216,34 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #ffe3ee; tou
 .xfer .xmsg { font-size: 14px; color: var(--mint-d); font-weight: 600; min-height: 1.2em; margin-top: 6px; }
 
 .season { margin: 18px 0 2px; font-size: 24px; font-weight: 700; color: #fff; text-shadow: 0 3px 0 rgba(43,33,65,.25); }
+
+/* ---------- Master Mode (crowns) ---------- */
+svg.crown { width: 1.15em; height: .9em; vertical-align: -.08em; flex: none; filter: drop-shadow(0 1px 0 rgba(43,33,65,.18)); }
+.btn svg.crown { width: 24px; height: 19px; margin-right: -2px; }
+.btn .ccount { background: rgba(255,255,255,.95); color: var(--grape-d); border-radius: 12px; padding: 0 9px; font-size: 16px; line-height: 24px; text-shadow: none; }
+/* the tabs stay pinned at the top while the map scrolls, so Master is always one tap away */
+.modetabs { width: min(440px, 100%); display: flex; gap: 6px; padding: 6px; background: rgba(255,255,255,.82); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); border-radius: 22px; box-shadow: var(--shadow); margin: 2px 0 4px; position: sticky; top: calc(6px + var(--safe-t)); z-index: 3; flex: none; }
+.mtab { pointer-events: auto; flex: 1; min-height: 46px; border: 0; border-radius: 17px; background: transparent; font-family: var(--font); font-size: 19px; font-weight: 700; color: var(--ink2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.mtab.on { background: #fff; color: var(--ink); box-shadow: 0 4px 0 #d9d0ea; }
+.mtab.on[data-a=mode-master] { background: var(--grape); color: #fff; box-shadow: 0 4px 0 var(--grape-d); text-shadow: 0 2px 0 rgba(0,0,0,.12); }
+.mtab:focus-visible { outline: 4px solid var(--ink); outline-offset: 2px; }
+.mtab svg.crown { width: 24px; height: 19px; }
+.masterinfo { text-align: center; font-weight: 600; font-size: 16px; line-height: 1.35; color: var(--ink2); padding: 12px 16px 14px; }
+.masterinfo b { color: var(--grape-d); }
+.world h3 .wcrowns { font-size: 15px; color: var(--ink2); font-weight: 600; white-space: nowrap; display: inline-flex; align-items: center; gap: 3px; }
+.world h3 .wstars { white-space: nowrap; }
+.world h3 .wstars + .wcrowns, .world h3 .wcrowns + .wstars { margin-left: 8px; }
+.world h3 .wcrowns:first-of-type { margin-left: auto; }
+.mastermap .world h3 .wcrowns { color: var(--grape-d); font-size: 16px; font-weight: 700; }
+.mastermap .world h3 .wstars { opacity: .7; }
+.lvl .st svg.crown { width: 22px; height: 17px; vertical-align: 0; }
+.mastermap .lvl .st { bottom: -10px; }
+.lvl .cr { position: absolute; right: -6px; top: -8px; line-height: 0; }
+.lvl .cr svg.crown { width: 20px; height: 16px; }
+.mastermap .lvl.crowned { box-shadow: 0 5px 0 rgba(0,0,0,.18), 0 0 0 3px #ffc93c; }
+.introtime .par.mtag { color: var(--grape-d); background: #efe9ff; display: inline-flex; align-items: center; gap: 4px; }
+.ribbon svg.crown { width: 22px; height: 17px; margin-right: 6px; vertical-align: -.12em; }
+.timer.mtimer { box-shadow: 0 0 0 3px var(--grape); }
+.bigcrown { margin: 4px 0 12px; line-height: 0; }
+.bigcrown svg.crown { width: 96px; height: 74px; transform: scale(0); filter: drop-shadow(0 5px 0 rgba(176,122,0,.45)); }
+.bigcrown.on svg.crown { animation: starpop .5s cubic-bezier(.3, 1.8, .5, 1) forwards; }

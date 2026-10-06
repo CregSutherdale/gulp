@@ -6,11 +6,17 @@ import { initPhysics, PhysicsWorld } from '../engine/physics.js';
 import { Renderer } from '../engine/render.js';
 import { Round } from '../game/round.js';
 import { levelSetup } from '../game/difficulty.js';
+import { masterSetup } from '../game/master.js';
 import { LEVELS } from '../game/allLevels.js';
 
 // ?easy=1 tests the Relaxed setting; ?ids=1,2 limits the run; default = CHALLENGE, every level
 const QS = new URLSearchParams(location.search);
 const EASY = QS.get('easy') === '1';
+// ?master=1: Master settings (Master timer, CHALLENGE growth, no +30 s). Gate: the careful bot
+// wins inside the Master timer (frac is reported, not gated); the erratic pass is skipped
+// because it relies on +30 s.
+const MASTER = QS.get('master') === '1';
+const setupFor = (L) => (MASTER ? masterSetup(L) : levelSetup(L, EASY));
 const IDS = QS.get('ids') ? QS.get('ids').split(',').map(Number) : null;
 const out = document.getElementById('out');
 const log = (s) => { out.textContent += s + '\n'; };
@@ -26,7 +32,7 @@ async function run() {
     if (IDS && !IDS.includes(L.id)) continue;
     if (round) round.dispose();
     let won = false;
-    round = new Round({ phys, renderer, kind: 'level', level: L, ...levelSetup(L, EASY), playerName: 'Bot', playerColor: 0xff5fa2, events: { finished: (r, why) => { won = why === 'win'; } } });
+    round = new Round({ phys, renderer, kind: 'level', level: L, ...setupFor(L), playerName: 'Bot', playerColor: 0xff5fa2, events: { finished: (r, why) => { won = why === 'win'; } } });
     // spawn sanity: how far did anything move while settling?
     let maxMove = 0, lost = 0, worst = '';
     for (const o of round.world.objects) {
@@ -37,7 +43,7 @@ async function run() {
     }
     const p = round.player;
     let steps = 0;
-    const T = round.duration; // this difficulty's real timer (CHALLENGE unless ?easy=1)
+    const T = round.duration; // this difficulty's real timer (CHALLENGE unless ?easy=1 / ?master=1)
     const limit = Math.ceil(T * 60);
     while (!round.over && !round.paused && steps < limit) {
       round.think(p, 1 / 60);
@@ -51,25 +57,29 @@ async function run() {
 
     // Erratic "human" run on a fresh copy: zigzags, sudden reversals, full-speed
     // sweeps. Must never lose a target and must still clear the level.
-    round.dispose();
-    let won2 = false;
-    round = new Round({ phys, renderer, kind: 'level', level: L, ...levelSetup(L, EASY), playerName: 'Human', playerColor: 0xff5fa2, events: { finished: (r, why) => { won2 = why === 'win'; } } });
-    const q = round.player; let ix = 0, iz = 0, switchT = 0, s2 = 0, rnd = 12345 + L.id;
-    const rand = () => ((rnd = (rnd * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
-    while (!round.over && s2 < limit * 3) {
-      if (round.paused) round.addTime(30);
-      switchT -= 1 / 60;
-      if (switchT <= 0) {
-        switchT = 0.25 + rand() * 0.9;
-        if (rand() < 0.55) { round.think(q, 1); ix = q.ai.ix; iz = q.ai.iz; } else { const a = rand() * Math.PI * 2; ix = Math.cos(a); iz = Math.sin(a); }
+    let won2 = false, s2 = 0, lostHuman = 0;
+    if (!MASTER) {
+      round.dispose();
+      round = new Round({ phys, renderer, kind: 'level', level: L, ...setupFor(L), playerName: 'Human', playerColor: 0xff5fa2, events: { finished: (r, why) => { won2 = why === 'win'; } } });
+      const q = round.player; let ix = 0, iz = 0, switchT = 0, rnd = 12345 + L.id;
+      const rand = () => ((rnd = (rnd * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+      while (!round.over && s2 < limit * 3) {
+        if (round.paused) round.addTime(30);
+        switchT -= 1 / 60;
+        if (switchT <= 0) {
+          switchT = 0.25 + rand() * 0.9;
+          if (rand() < 0.55) { round.think(q, 1); ix = q.ai.ix; iz = q.ai.iz; } else { const a = rand() * Math.PI * 2; ix = Math.cos(a); iz = Math.sin(a); }
+        }
+        round.update(1 / 60, { x: ix, z: iz });
+        s2++;
       }
-      round.update(1 / 60, { x: ix, z: iz });
-      s2++;
+      lostHuman = round.targets.reduce((n, t) => n + (t.need0 - t.need), 0);
     }
-    const lostHuman = round.targets.reduce((n, t) => n + (t.need0 - t.need), 0);
-    const ok = won && used <= T * 0.75 && maxMove < 0.6 && lost === 0 && lostBot === 0 && lostHuman === 0 && won2;
-    results.push({ id: L.id, name: L.name, won, used: +used.toFixed(1), time: T, frac: +(used / T).toFixed(2), objs: round.world.objects.length, maxMove: +maxMove.toFixed(2), worst, lost, stuck, finalR: +p.r.toFixed(2), lostBot, lostHuman, won2, humanT: +(s2 / 60).toFixed(1), ok });
-    log(`${ok ? 'PASS' : 'FAIL'}  L${String(L.id).padStart(2)} ${L.name.padEnd(22)} ${won ? 'won' : 'LOST'} in ${used.toFixed(1)}s / ${T}s  objs ${round.world.objects.length}  spawnMove ${maxMove.toFixed(2)}(${worst}) lost ${lost} stuck ${stuck}  r ${p.r.toFixed(2)}  [${tg}]  | erratic: ${won2 ? 'won' : 'NOT WON'} in ${(s2 / 60).toFixed(0)}s, targets lost bot ${lostBot} human ${lostHuman}, saved-by-fix ${round.rescued || 0} reclaimed ${round.reclaimed || 0}`);
+    const ok = MASTER
+      ? won && used <= T && maxMove < 0.6 && lost === 0 && lostBot === 0
+      : won && used <= T * 0.75 && maxMove < 0.6 && lost === 0 && lostBot === 0 && lostHuman === 0 && won2;
+    results.push({ id: L.id, name: L.name, won, used: +used.toFixed(1), time: T, frac: +(used / T).toFixed(2), objs: round.world.objects.length, maxMove: +maxMove.toFixed(2), worst, lost, stuck, finalR: +p.r.toFixed(2), lostBot, lostHuman, won2, humanT: +(s2 / 60).toFixed(1), master: MASTER, ok });
+    log(`${ok ? 'PASS' : 'FAIL'}  L${String(L.id).padStart(2)} ${L.name.padEnd(22)} ${won ? 'won' : 'LOST'} in ${used.toFixed(1)}s / ${T}s  objs ${round.world.objects.length}  spawnMove ${maxMove.toFixed(2)}(${worst}) lost ${lost} stuck ${stuck}  r ${p.r.toFixed(2)}  [${tg}]  ${MASTER ? `| MASTER frac ${(used / T).toFixed(2)}, targets lost bot ${lostBot}` : `| erratic: ${won2 ? 'won' : 'NOT WON'} in ${(s2 / 60).toFixed(0)}s, targets lost bot ${lostBot} human ${lostHuman}`}, saved-by-fix ${round.rescued || 0} reclaimed ${round.reclaimed || 0}`);
     await new Promise((r) => setTimeout(r, 0));
   }
   const fails = results.filter((r) => !r.ok).length;

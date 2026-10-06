@@ -1,4 +1,5 @@
 import { levelSetup } from './game/difficulty.js';
+import { masterSetup, masterTime } from './game/master.js';
 import { setParMode } from './game/pars.js';
 import './game/props_cozy.js';
 import { initPhysics, PhysicsWorld } from './engine/physics.js';
@@ -7,7 +8,7 @@ import { Input } from './engine/input.js';
 import * as AudioMod from './engine/audio.js';
 import { Round } from './game/round.js';
 import { LEVELS } from './game/allLevels.js';
-import { loadSave, writeSave, totalStars, exportProgress, importProgress, resetLevels, restoreLevels, hasLevelBackup } from './game/save.js';
+import { loadSave, writeSave, totalStars, totalCrowns, exportProgress, importProgress, resetLevels, restoreLevels, hasLevelBackup } from './game/save.js';
 import { skinById, animateSkin } from './game/skins.js';
 import { UI } from './ui/ui.js';
 import { PROPS } from './game/props.js';
@@ -48,6 +49,8 @@ const RIVAL_POOL = [
 ];
 
 let phys = null, round = null, running = false, demo = false, levelIdx = 0;
+// Master Mode: which map tab is showing (a run's own Master flag lives on round.master).
+let mapMode = 'levels';
 let lastZen = null;
 let tickSec = -1, tooBigHints = 0, hudT = 0, helpers = null, saveDirty = false, saveT = 0;
 save.eaten = save.eaten || {};
@@ -70,7 +73,7 @@ function newRound(opts) {
   // seconds of play never stutter on a phone.
   try { renderer.r.compile(renderer.scene, renderer.camera); } catch (e) { console.error('precompile', e); }
   tickSec = -1; tooBigHints = 0;
-  window.__game = { round, renderer, phys, save, LEVELS, startLevel, startZen, showZen };
+  window.__game = { round, renderer, phys, save, LEVELS, startLevel, startMaster, startZen, showZen, showMap, masterTime };
   return round;
 }
 
@@ -81,22 +84,26 @@ function attract() {
   playMusic('menu');
 }
 
-function startLevel(i) {
+// master = a Master run: Master timer, CHALLENGE growth even in Easy mode, no helpers, no +30 s.
+function startLevel(i, master = false) {
   demo = false; running = false; levelIdx = i;
   const level = LEVELS[i];
   setParMode(save.relaxed ? 'relaxed' : 'challenge');
-  newRound({ kind: 'level', level, ...levelSetup(level, save.relaxed) });
+  newRound({ kind: 'level', level, ...(master ? masterSetup(level) : levelSetup(level, save.relaxed)) });
+  round.master = !!master;
   playMusic(level.world);
-  helpers = { magnet: 1, freeze: 1, grow: 1 };
+  helpers = master ? { magnet: 0, freeze: 0, grow: 0 } : { magnet: 1, freeze: 1, grow: 1 };
   ui.intro({
-    level, index: i, targets: round.targets, time: round.duration, par: parFor(level)[0],
+    level, index: i, targets: round.targets, time: round.duration, par: master ? null : parFor(level)[0],
+    master, masterBest: master ? save.masterBest[level.id] : undefined,
     onGo: () => {
-      ui.clear(); round.endOverview(); ui.hudLevel(round, pause, helpers, useHelper); begin();
-      if (i === 1 && !save.seenHelpers) { save.seenHelpers = true; writeSave(save); setTimeout(() => ui.hint('Stuck? Tap a helper at the bottom ♡', 3000), 4200); }
+      ui.clear(); round.endOverview(); ui.hudLevel(round, pause, helpers, useHelper, master); begin();
+      if (!master && i === 1 && !save.seenHelpers) { save.seenHelpers = true; writeSave(save); setTimeout(() => ui.hint('Stuck? Tap a helper at the bottom ♡', 3000), 4200); }
     },
-    onBack: () => showMap(),
+    onBack: () => showMap(master ? 'master' : 'levels'),
   });
 }
+const startMaster = (i) => startLevel(i, true);
 function startZen(place) {
   demo = false;
   if (place && place.world) {
@@ -135,7 +142,7 @@ function begin() {
 }
 
 function useHelper(id) {
-  if (!running || !helpers[id]) return helpers[id] || 0;
+  if (!running || round.master || !helpers[id]) return helpers[id] || 0;
   helpers[id]--;
   round.useBooster(id);
   const p = round.player;
@@ -192,11 +199,12 @@ const events = {
   },
   timeUp(r) {
     running = false; audio.timeUp(); ui.hideHud();
+    const master = !!r.master;
     ui.timeUp({
-      round: r,
-      onMore: () => { ui.clear(); ui.hudLevel(r, pause, helpers, useHelper); r.addTime(30); running = true; },
-      onRetry: () => startLevel(levelIdx),
-      onMap: () => showMap(),
+      round: r, master,
+      onMore: () => { if (master) return; ui.clear(); ui.hudLevel(r, pause, helpers, useHelper); r.addTime(30); running = true; },
+      onRetry: () => startLevel(levelIdx, master),
+      onMap: () => showMap(master ? 'master' : 'levels'),
     });
   },
   finished(r, why) {
@@ -205,7 +213,21 @@ const events = {
     ui.hideHud();
     writeSave(save); saveDirty = false;
     if (r.kind === 'level' && why === 'win') r.celebrate();
-    if (r.kind === 'level' && why === 'win') {
+    if (r.kind === 'level' && why === 'win' && r.master) {
+      // Master win: a crown + the Master best time (normal stars and best times are untouched).
+      const id = r.level.id, tUsed = r.playTime();
+      const firstCrown = !save.crowns[id];
+      save.crowns[id] = 1;
+      const prev = save.masterBest[id], newBest = prev !== undefined && tUsed < prev;
+      if (prev === undefined || tUsed < prev) save.masterBest[id] = tUsed;
+      writeSave(save);
+      audio.win(); confetti.burst();
+      const nx = levelIdx + 1, hasNext = nx < LEVELS.length && !!save.stars[LEVELS[nx].id];
+      setTimeout(() => ui.masterWin({
+        level: r.level, index: levelIdx, time: tUsed, best: save.masterBest[id], newBest, firstCrown, hasNext,
+        onNext: () => startLevel(nx, true), onRetry: () => startLevel(levelIdx, true), onMap: () => showMap('master'),
+      }), 700);
+    } else if (r.kind === 'level' && why === 'win') {
       const stars = starsFor(r.level, r.playTime());
       const id = r.level.id;
       save.stars[id] = Math.max(save.stars[id] || 0, stars);
@@ -216,7 +238,7 @@ const events = {
       audio.win(); confetti.burst();
       setTimeout(() => ui.levelWin({
         level: r.level, index: levelIdx, stars, last: levelIdx >= LEVELS.length - 1, time: tUsed, ate: r.eatenCount || 0, newBest,
-        onNext: () => startLevel(levelIdx + 1), onRetry: () => startLevel(levelIdx), onMap: () => showMap(),
+        onNext: () => startLevel(levelIdx + 1), onRetry: () => startLevel(levelIdx), onMap: () => showMap('levels'),
       }), 700);
     } else if (r.kind === 'race') {
       const won = r.standings()[0] === r.player;
@@ -237,8 +259,8 @@ function pause() {
   ui.pause({
     save,
     onResume: () => { ui.clear(); running = true; },
-    onRestart: () => { if (round.kind === 'level') startLevel(levelIdx); else if (round.kind === 'race') startRace(); else startZen(lastZen); },
-    onQuit: () => (round.kind === 'level' ? showMap() : home()),
+    onRestart: () => { if (round.kind === 'level') startLevel(levelIdx, !!round.master); else if (round.kind === 'race') startRace(); else startZen(lastZen); },
+    onQuit: () => (round.kind === 'level' ? showMap(round.master ? 'master' : 'levels') : home()),
     onToggle: toggle,
   });
 }
@@ -257,7 +279,9 @@ function home() {
     name: save.name,
     nextLabel: unlockedIndex() >= LEVELS.length ? 'Play' : `Level ${next + 1}`,
     onPlay: () => (unlockedIndex() >= LEVELS.length ? showMap() : startLevel(next)),
-    onLevels: () => showMap(),
+    onLevels: () => showMap('levels'),
+    onMaster: () => showMap('master'),
+    crowns: totalCrowns(save),
     onZen: showZen,
     onRace: startRace,
     onSkins: () => ui.skins({ save, stars: totalStars(save), onPick: (id) => { save.skin = id; writeSave(save); recolorPlayer(); }, onBack: home }),
@@ -298,11 +322,18 @@ function showZen() {
     }));
   ui.zenPicker({ places, autoSteer: save.autoSteer, onPick: startZen, onToggle: toggle, onBack: home });
 }
-function showMap() {
+// mode: 'levels' | 'master' (omitted = the tab she was last on)
+function showMap(mode, focusTabs = false) {
+  if (mode) mapMode = mode;
   input.enabled = false; running = false;
   if (!demo) attract();
   ui.hideHud();
-  ui.levelMap({ levels: LEVELS, save, stars: totalStars(save), onPick: startLevel, onBack: home });
+  ui.levelMap({
+    levels: LEVELS, save, stars: totalStars(save), crowns: totalCrowns(save), mode: mapMode, focusTabs,
+    onMode: (m) => showMap(m, true),
+    onPick: (i) => startLevel(i, mapMode === 'master'),
+    onBack: home,
+  });
 }
 function recolorPlayer() {
   if (!round) return;
