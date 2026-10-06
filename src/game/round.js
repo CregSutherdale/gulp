@@ -491,7 +491,8 @@ export class Round {
     // Levels are small boards: always keep ~70% of the board's width in view so she
     // can plan (like Hole It), and only pull back further as the hole grows.
     const minD = this.kind === 'level' ? (this.world.size.w * 0.7 / 2) / tanH : this.kind === 'zenworld' ? (12 / 2) / tanH : 11;
-    const D = Math.max(minD, r / (share * tanH));
+    // Amanda (10/05): 'too far away' -> sit ~13% closer in every play mode.
+    const D = Math.max(minD, r / (share * tanH)) * 0.87;
     const pitch = THREE.MathUtils.degToRad(56);
     const lead = 0.18;
     return { x: p.x + p.vx * lead, y: D * Math.sin(pitch), z: p.z + p.vz * lead + D * Math.cos(pitch), lx: p.x + p.vx * lead, lz: p.z + p.vz * lead };
