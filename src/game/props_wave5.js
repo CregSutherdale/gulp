@@ -440,7 +440,7 @@ def('petcarrier', {
 
 def('doghouse', {
   label: 'Dog House', col: { t: 'box', w: 2.66, h: 2.86, d: 2.84 }, fit: 3.89, value: 24, mass: 2,
-  tints: [0xff9cbc, 0x8fc4ff, 0x9fe0b8, 0xffcf6a],
+  tints: [0xff9cbc, 0xffcf6a, 0xffb38a, 0xfff0e0],
   build: () => {
     const roofSlab = (s) => tbox(1.62, 0.14, 2.62, s > 0 ? 0xff5a5a : 0xff6b6b, s * 0.66, 2.24, 0, 0, 0, -s * 0.72);
     const p = [
