@@ -563,7 +563,7 @@ function DINO(K) {
   const dots = [];
   // sand apron round the dig (flat), with a rope fence on posts
   K.flat.push(rectXZ(-SX, SX, Z0, SZ, 0.02, 0xe6c58e), rectXZ(-SX, SX, -SZ, -Z0, 0.02, 0xe6c58e), rectXZ(X0, SX, -Z0, Z0, 0.02, 0xe6c58e), rectXZ(-SX, -X0, -Z0, Z0, 0.02, 0xe6c58e));
-  for (let i = 0; i < 160; i++) { const [x, z] = K.around(0.6, SB - 0.3, SB - 0.3); dots.push([x, 0.03, z, K.rnd(0.08, 0.2), K.pick([0xd4ad72, 0xf0d6a0, 0xc99a60]), 5]); }
+  for (let i = 0; i < 160; i++) { const [x, z] = K.around(0.6, SB - 0.3, SB - 0.3); dots.push([x, 0.03, z, K.rnd(0.05, 0.12), K.pick([0xd4ad72, 0xf0d6a0, 0xc99a60]), 6]); }
   // jungle grass beyond, darker patches and little flowers
   for (let i = 0; i < 50; i++) { const [x, z] = K.around(SB + 1.5, 30, 20); dots.push([x, 0.01 + (i % 3) * 0.01, z, K.rnd(1.6, 4.2), K.pick([0x7cc25e, 0x8fcf6a, 0x6fb655, 0x9ad877]), 12, 1, K.rnd(0.6, 1), K.R() * PI]); }
   for (let i = 0; i < 90; i++) { const [x, z] = K.around(SB + 1.2, 26, 18); dots.push([x, 0.08, z, 0.14, K.pick([0xffffff, 0xffe066, 0xff9fc8]), 5]); }
