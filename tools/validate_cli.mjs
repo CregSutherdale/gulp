@@ -3,6 +3,7 @@
 //   node tools/validate_cli.mjs                  every level, CHALLENGE
 //   node tools/validate_cli.mjs --ids 61,62      only these level ids
 //   node tools/validate_cli.mjs --easy           Relaxed setting
+//   node tools/validate_cli.mjs --master         Master mode (Master timer, CHALLENGE growth, no +30 s)
 //   node tools/validate_cli.mjs --json out.json  also write the results array
 // No window ever opens. The browser tree is killed on every exit path, and a hard
 // deadline (--timeout secs, default 1500) ends runaway runs.
@@ -15,7 +16,7 @@ import { spawn, execSync } from 'node:child_process';
 
 const argv = process.argv.slice(2);
 const arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
-const IDS = arg('--ids'), EASY = argv.includes('--easy'), JSON_OUT = arg('--json');
+const IDS = arg('--ids'), EASY = argv.includes('--easy'), MASTER = argv.includes('--master'), JSON_OUT = arg('--json');
 const TIMEOUT = Number(arg('--timeout') || 1500) * 1000;
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/(\w:)/, '$1')), '..');
 const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gulp-validate-'));
@@ -56,7 +57,7 @@ const wsUrl = await new Promise((resolve, reject) => {
   const to = setTimeout(() => reject(new Error('browser did not start')), 20000);
   browser.stderr.on('data', (d) => { buf += d; const m = buf.match(/DevTools listening on (ws:\/\/\S+)/); if (m) { clearTimeout(to); resolve(m[1]); } });
 });
-const q = new URLSearchParams(); if (IDS) q.set('ids', IDS); if (EASY) q.set('easy', '1');
+const q = new URLSearchParams(); if (IDS) q.set('ids', IDS); if (EASY) q.set('easy', '1'); if (MASTER) q.set('master', '1');
 const dbg = new URL(wsUrl).port;
 const tab = await (await fetch(`http://127.0.0.1:${dbg}/json/new?http://127.0.0.1:${PORT}/validate.html?${q}`, { method: 'PUT' })).json();
 const ws = new WebSocket(tab.webSocketDebuggerUrl);
