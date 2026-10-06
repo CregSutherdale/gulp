@@ -3,6 +3,7 @@
 //   node tools/measure_master.mjs                      measure every level, print the table
 //   node tools/measure_master.mjs --ids 61,62,63       only these levels
 //   node tools/measure_master.mjs --write              also write MASTER_TIMES (merged: other ids kept)
+//   node tools/measure_master.mjs --verify-only [--ids ..]  skip measuring: verify (and raise) the table as it is
 //   node tools/measure_master.mjs --write --verify     then run validate_cli --master on those ids and
 //                                                      raise any failing level by 5 s until it passes
 //                                                      (up to --rounds, default 6); raised ids are recorded
@@ -17,7 +18,8 @@ import { spawn } from 'node:child_process';
 
 const argv = process.argv.slice(2);
 const arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
-const IDS = arg('--ids'), WRITE = argv.includes('--write'), VERIFY = argv.includes('--verify');
+const IDS = arg('--ids'), VERIFY_ONLY = argv.includes('--verify-only');
+const WRITE = argv.includes('--write') || VERIFY_ONLY, VERIFY = argv.includes('--verify') || VERIFY_ONLY;
 const ROUNDS = Number(arg('--rounds') || 6);
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/(\w:)/, '$1')), '..');
 const MASTER_JS = path.join(root, 'src/game/master.js');
@@ -53,6 +55,36 @@ function writeTables(times, raised) {
   fs.writeFileSync(MASTER_JS, next);
 }
 
+
+// Runs the Master validator on ids and raises each failing level by 5 s until it passes.
+async function verify(ids, table, times, raised) {
+  let todo = ids;
+  for (let round = 1; round <= ROUNDS && todo.length; round++) {
+    console.log(`\nverify round ${round}: validate_cli --master --ids ${todo.join(',')}`);
+    const v = await validate(['--master', '--ids', todo.join(',')], path.join(tmp, `v${round}.json`));
+    if (!v.res) { console.error('master validator produced no results'); process.exit(2); }
+    const fails = v.res.filter((r) => !r.ok);
+    for (const r of v.res) console.log(`  ${r.ok ? 'PASS' : 'FAIL'} L${r.id} ${r.won ? 'won' : 'LOST'} in ${r.used}s / ${r.time}s  frac ${r.frac}`);
+    if (!fails.length) { todo = []; break; }
+    for (const r of fails) {
+      if (raised[r.id] === undefined) raised[r.id] = table[r.id] ?? times[r.id];
+      times[r.id] = (times[r.id] ?? r.time) + 5;
+      console.log(`  raise L${r.id} -> ${times[r.id]}s`);
+    }
+    writeTables(times, raised);
+    todo = fails.map((r) => r.id);
+  }
+  if (todo.length) { console.error(`STILL FAILING after ${ROUNDS} rounds: ${todo.join(',')}`); process.exit(1); }
+  console.log(`\nRAISED: ${Object.keys(raised).length ? Object.entries(raised).map(([id, f]) => `L${id} ${f}->${times[id]}`).join(', ') : 'none'}`);
+  console.log('every measured level passes Master');
+}
+
+if (VERIFY_ONLY) {
+  const cur = readTables();
+  const want = IDS ? IDS.split(',').map(Number) : Object.keys(cur.times).map(Number);
+  await verify(want, {}, cur.times, cur.raised);
+  process.exit(0);
+}
 const ids = IDS ? ['--ids', IDS] : [];
 console.log(`measuring ${IDS || 'every level'}: two CHALLENGE validator runs in parallel...`);
 const [a, b] = await Promise.all([validate(ids, path.join(tmp, 'a.json')), validate(ids, path.join(tmp, 'b.json'))]);
@@ -77,27 +109,7 @@ if (WRITE) {
   for (const id of Object.keys(table)) delete raised[id]; // re-measured: start from the formula again
   writeTables(times, raised);
   console.log(`wrote ${Object.keys(table).length} entries to src/game/master.js`);
-  if (VERIFY) {
-    let todo = Object.keys(table).map(Number);
-    for (let round = 1; round <= ROUNDS && todo.length; round++) {
-      console.log(`\nverify round ${round}: validate_cli --master --ids ${todo.join(',')}`);
-      const v = await validate(['--master', '--ids', todo.join(',')], path.join(tmp, `v${round}.json`));
-      if (!v.res) { console.error('master validator produced no results'); process.exit(2); }
-      const fails = v.res.filter((r) => !r.ok);
-      for (const r of v.res) console.log(`  ${r.ok ? 'PASS' : 'FAIL'} L${r.id} ${r.won ? 'won' : 'LOST'} in ${r.used}s / ${r.time}s  frac ${r.frac}`);
-      if (!fails.length) { todo = []; break; }
-      for (const r of fails) {
-        if (raised[r.id] === undefined) raised[r.id] = table[r.id] ?? times[r.id];
-        times[r.id] = (times[r.id] ?? r.time) + 5;
-        console.log(`  raise L${r.id} -> ${times[r.id]}s`);
-      }
-      writeTables(times, raised);
-      todo = fails.map((r) => r.id);
-    }
-    if (todo.length) { console.error(`STILL FAILING after ${ROUNDS} rounds: ${todo.join(',')}`); process.exit(1); }
-    console.log(`\nRAISED: ${Object.keys(raised).length ? Object.entries(raised).map(([id, f]) => `L${id} ${f}->${times[id]}`).join(', ') : 'none'}`);
-    console.log('every measured level passes Master');
-  }
+  if (VERIFY) await verify(Object.keys(table).map(Number), table, times, raised);
 }
 try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) { /* ignore */ }
 process.exit(0);

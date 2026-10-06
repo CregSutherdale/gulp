@@ -59,7 +59,7 @@ const wsUrl = await new Promise((resolve, reject) => {
 });
 const q = new URLSearchParams(); if (IDS) q.set('ids', IDS); if (EASY) q.set('easy', '1'); if (MASTER) q.set('master', '1');
 const dbg = new URL(wsUrl).port;
-const tab = await (await fetch(`http://127.0.0.1:${dbg}/json/new?http://127.0.0.1:${PORT}/validate.html?${q}`, { method: 'PUT' })).json();
+const tab = await (await fetch(`http://127.0.0.1:${dbg}/json/new?${encodeURIComponent(`http://127.0.0.1:${PORT}/validate.html?${q}`)}`, { method: 'PUT' })).json();
 const ws = new WebSocket(tab.webSocketDebuggerUrl);
 await new Promise((r) => ws.addEventListener('open', r, { once: true }));
 let id = 0; const pending = new Map();
