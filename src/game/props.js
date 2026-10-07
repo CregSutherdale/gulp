@@ -234,10 +234,18 @@ export function colliderHalfHeight(col) {
   return col.h / 2;
 }
 
+// Color-target props whose tinted parts are too small to read at phone size (tint audit 10/06:
+// 364 tinted props rendered before/after the tint-mask fix; every other color target read fine).
+const TINT_FLOOR = { snowman: 0.4, candycane: 0.45, wheelbarrow: 0.55, wand: 0.6, nest: 0.75 };
+
 // Build the geometry for a prop, re-centered so the body origin = collider center.
 export function buildGeometry(prop, variant = 0) {
   const g = merge(prop.build(variant));
   g.translate(0, -colliderHalfHeight(prop.col), 0);
+  // tintFloor (0..1): every part takes at least this much of the instance tint. For color-target
+  // props whose TINT parts are too small to read at phone size once the tint mask works (10/06).
+  const f = TINT_FLOOR[prop.id] ?? prop.tintFloor;
+  if (f && g.attributes.tmask) { const m = g.attributes.tmask; for (let i = 0; i < m.count; i++) m.setX(i, Math.max(m.getX(i), f)); }
   g.computeBoundingSphere();
   return g;
 }

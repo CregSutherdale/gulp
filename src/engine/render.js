@@ -41,9 +41,9 @@ export function patchProps(mat, { sink = true } = {}) {
         #endif`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying float vWY;')
-      .replace('#include <dithering_fragment>', '#include <dithering_fragment>\ngl_FragColor.rgb *= clamp(1.0 + vWY * 0.32, 0.04, 1.0);');
+      .replace('#include <dithering_fragment>', sink ? '#include <dithering_fragment>\ngl_FragColor.rgb *= clamp(1.0 + vWY * 0.32, 0.04, 1.0);' : '#include <dithering_fragment>');
   };
-  mat.customProgramCacheKey = () => 'props-tint-mask';
+  mat.customProgramCacheKey = () => (sink ? 'props-tint-mask' : 'props-tint-mask-nosink');
   return mat;
 }
 

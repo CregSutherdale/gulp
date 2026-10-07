@@ -1,5 +1,5 @@
 import { PROPS, buildGeometry } from '../src/game/props.js';
-import '../src/game/props_cozy.js'; import '../src/game/props_wave2.js'; import '../src/game/props_wave3.js'; import '../src/game/props_wave4.js';
+import '../src/game/props_cozy.js'; import '../src/game/props_wave2.js'; import '../src/game/props_wave3.js'; import '../src/game/props_wave4.js'; import '../src/game/props_wave5.js'; import '../src/game/props_wave6.js'; import '../src/game/props_wave7.js';
 import * as THREE from 'three';
 const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
 const rows = [];
