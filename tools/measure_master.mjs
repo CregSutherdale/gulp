@@ -29,7 +29,7 @@ const masterFromBot = (B) => Math.max(25, ceil5(1.12 * B + 4));
 
 function validate(extra, jsonFile) {
   return new Promise((resolve) => {
-    const args = [path.join(root, 'tools/validate_cli.mjs'), '--json', jsonFile, ...extra];
+    const args = [path.join(root, 'tools/validate_cli.mjs'), '--json', jsonFile, '--timeout', arg('--timeout') || '3600', ...extra];
     const ch = spawn(process.execPath, args, { cwd: root, stdio: ['ignore', 'pipe', 'inherit'] });
     let out = '';
     ch.stdout.on('data', (d) => { out += d; });
@@ -86,8 +86,10 @@ if (VERIFY_ONLY) {
   process.exit(0);
 }
 const ids = IDS ? ['--ids', IDS] : [];
-console.log(`measuring ${IDS || 'every level'}: two CHALLENGE validator runs in parallel...`);
-const [a, b] = await Promise.all([validate(ids, path.join(tmp, 'a.json')), validate(ids, path.join(tmp, 'b.json'))]);
+console.log(`measuring ${IDS || 'every level'}: two CHALLENGE validator runs, one after the other...`);
+// One validator at a time (parallel runs pinned the CPU and skewed bot times).
+const a = await validate(ids, path.join(tmp, 'a.json'));
+const b = await validate(ids, path.join(tmp, 'b.json'));
 if (!a.res || !b.res) { console.error('a validator run produced no results', a.code, b.code); process.exit(2); }
 const bById = new Map(b.res.map((r) => [r.id, r]));
 const table = {}, rows = [];

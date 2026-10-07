@@ -12,7 +12,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn, execSync } from 'node:child_process';
+import { spawn, execSync, execFileSync } from 'node:child_process';
 
 const argv = process.argv.slice(2);
 const arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
@@ -44,6 +44,13 @@ let done = false;
 function cleanup() {
   if (done) return; done = true;
   try { execSync(`taskkill /PID ${browser.pid} /T /F`, { stdio: 'ignore' }); } catch (e) { /* gone */ }
+  // Edge's launcher can exit and leave the real browser parented to a dead PID, so /T misses
+  // it. Also kill every msedge whose command line holds OUR unique profile dir (only ours).
+  try {
+    const tag = path.basename(profile).replace(/'/g, '');
+    const ps = `Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -like '*${tag}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
+    execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps], { stdio: 'ignore' });
+  } catch (e) { /* none left */ }
   try { server.close(); } catch (e) { /* closed */ }
   for (const d of [profile, outDir]) { try { fs.rmSync(d, { recursive: true, force: true, maxRetries: 20, retryDelay: 200 }); } catch (e) { /* locked: harmless */ } }
 }
@@ -56,6 +63,14 @@ const wsUrl = await new Promise((resolve, reject) => {
   let buf = '';
   const to = setTimeout(() => reject(new Error('browser did not start')), 20000);
   browser.stderr.on('data', (d) => { buf += d; const m = buf.match(/DevTools listening on (ws:\/\/\S+)/); if (m) { clearTimeout(to); resolve(m[1]); } });
+  // Newer Edge builds print nothing on stderr: read the port file it writes into the profile.
+  const poll = setInterval(() => {
+    try {
+      const [port, p] = fs.readFileSync(path.join(profile, 'DevToolsActivePort'), 'utf8').split(String.fromCharCode(10)).map((x) => x.trim());
+      if (port && p) { clearInterval(poll); clearTimeout(to); resolve(`ws://127.0.0.1:${port}${p}`); }
+    } catch (e) { /* not yet */ }
+  }, 250);
+  setTimeout(() => clearInterval(poll), 21000);
 });
 const q = new URLSearchParams(); if (IDS) q.set('ids', IDS); if (EASY) q.set('easy', '1'); if (MASTER) q.set('master', '1');
 const dbg = new URL(wsUrl).port;
