@@ -1,5 +1,5 @@
-const V='gulp-a8a8d827be';
-const CORE=['./','./game.a8a8d827be.js','./manifest.webmanifest','./icon-180.png'];
+const V='gulp-2712850d99';
+const CORE=['./','./game.2712850d99.js','./manifest.webmanifest','./icon-180.png'];
 // Install caches the page and its game file TOGETHER, so the cached pair always matches.
 self.addEventListener('install',e=>{e.waitUntil(caches.open(V).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting()));});
 // Only ever delete this game's old caches (the github.io domain is shared).
