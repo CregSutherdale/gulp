@@ -739,7 +739,7 @@ def('stocking', {
   },
 });
 
-def('toydrum', {
+def('holidaydrum', {
   label: 'Toy Drum', col: { t: 'cyl', r: 0.34, h: 0.52 }, fit: 0.68, value: 1, mass: 0.15,
   tints: FESTIVE,
   build: () => {
@@ -880,5 +880,5 @@ def('holidaytree', {
 export const WAVE6_WORLDS = {
   spa: ['bathbead', 'spabubble', 'spacandle', 'bathbomb', 'lotion', 'squeakduck', 'soapbar', 'loofah', 'towelroll', 'bathstool', 'spabucket', 'towelstack', 'bigbubble', 'spabench', 'clawtub'],
   pumpkin: ['acorn', 'autumnleaf', 'minigourd', 'orchardapple', 'patchgourd', 'cornear', 'patchpumpkin', 'applebasket', 'scarebuddy', 'hayroll', 'bigpumpkin', 'pumpkincart', 'haywagon', 'prizepumpkin'],
-  holiday: ['bauble', 'nutsoldier', 'giftbow', 'minicane', 'giftbox', 'toydrum', 'stocking', 'wreath', 'giftstack', 'toysled', 'bigbox', 'giftsleigh', 'holidaytree'],
+  holiday: ['bauble', 'nutsoldier', 'giftbow', 'minicane', 'giftbox', 'holidaydrum', 'stocking', 'wreath', 'giftstack', 'toysled', 'bigbox', 'giftsleigh', 'holidaytree'],
 };

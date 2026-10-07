@@ -117,7 +117,7 @@ const carpet = (id, tid, cx, cz, cols, rows, gx, gz, tints, ttints, every = 1, t
 // cornear: 0 yellow, 1 cream, 2 red, 3 purple, 4 orange
 // bauble / giftbow: 0 red, 1 green, 2 blue, 3 gold, 4 silver, 5 purple, 6 pink
 // giftbox / bigbox / giftstack: 0 red, 1 green, 2 blue, 3 gold, 4 purple, 5 pink, 6 teal, 7 cream
-// minicane / stocking / toydrum: 0 red, 1 green, 2 blue, 3 gold, 4 purple, 5 pink
+// minicane / stocking / holidaydrum: 0 red, 1 green, 2 blue, 3 gold, 4 purple, 5 pink
 // nutsoldier: 0 red, 1 blue, 2 green, 3 purple, 4 gold, 5 white
 const SIX = [0, 1, 2, 3, 4, 5];
 const SEVEN = [0, 1, 2, 3, 4, 5, 6];
@@ -382,7 +382,7 @@ const LIST = [
       ...[[-8.8, -4.0], [8.8, -4.0], [0, -13.4]].map(([x, z], k) => at('giftstack', x, z, [0, 2, 5][k])),
       ...[-1, 1].map((s) => line('minicane', s * 2.0, 0.6, s * 8.6, 0.6, 12, SIX, 0)),
       ...[-1, 1].map((s) => line('minicane', s * 2.0, 1.4, s * 8.6, 1.4, 12, [3, 4, 5, 0, 1, 2], 0)),
-      ...[-1, 1].map((s) => line('toydrum', s * 3.0, 3.2, s * 8.6, 3.2, 6)),
+      ...[-1, 1].map((s) => line('holidaydrum', s * 3.0, 3.2, s * 8.6, 3.2, 6)),
       line('stocking', -1.0, 2.8, 1.0, 2.8, 2, 'cycle', 0),
       ...diag('giftbow', 0, 5.2, 16, 2, 0.6, 0.54, SEVEN, 0, 3),
       carpet('giftbox', 'bauble', 0, 8.4, 11, 3, GB, GB, EIGHT, SEVEN, 1, 2, 2),
@@ -402,7 +402,7 @@ const LIST = [
       at('toysled', -9.6, -14.0, 0), at('toysled', 9.6, 2.0, 2),
       ...[-1, 1].map((s) => line('nutsoldier', s * 10.4, -11.0, s * 10.4, -1.0, 15)),
       ...[-1, 1].map((s) => line('nutsoldier', s * 9.6, -11.0, s * 9.6, -1.0, 15, [3, 4, 5, 0, 1, 2])),
-      ...[-1, 1].map((s) => line('toydrum', s * 10.2, 4.0, s * 10.2, 8.0, 4)),
+      ...[-1, 1].map((s) => line('holidaydrum', s * 10.2, 4.0, s * 10.2, 8.0, 4)),
       line('wreath', -9.8, 1.2, -9.8, 1.2, 1),
       ...[-1, 1].map((s) => diag('giftbox', s * 6.4, 12.2, 6, 2, GB, GB, EIGHT, 0, 3)),
       ...[-1, 1].map((s) => line('giftbow', s * 3.2, 14.4, s * 9.6, 14.4, 12)),
@@ -421,7 +421,7 @@ const LIST = [
       line('stocking', 2.0, -15.2, 6.0, -15.2, 6, FESTIVE6(), 0),
       ...[-1, 1].map((s) => line('stocking', s * 10.8, -9.0, s * 10.8, -1.0, 9, FESTIVE6(), PI / 2)),
       ...[-1, 1].map((s) => at('bigbox', s * 9.0, -4.6, s < 0 ? 0 : 3)),
-      ...[-1, 1].map((s) => line('toydrum', s * 7.6, -14.0, s * 10.8, -14.0, 0)),
+      ...[-1, 1].map((s) => line('holidaydrum', s * 7.6, -14.0, s * 10.8, -14.0, 0)),
       line('wreath', 1.6, 1.4, 4.6, 1.4, 2), line('toysled', 3.0, -0.6, 3.0, -0.6, 1),
       ...diag('giftbox', 0, 7.6, 16, 2, GB, GB, EIGHT, 0, 3),
       ...diag('minicane', 0, 10.2, 18, 2, 0.58, 0.4, SIX, 0, 2),
@@ -446,7 +446,7 @@ const LIST = [
       ...diag('stocking', 0, 5.4, 12, 1, 0.9, 0.9, SIX, 0, 1),
       carpet('giftbox', 'bauble', 0, 8.8, 15, 3, GB, GB, EIGHT, SEVEN, 1, 1, 2),
       ...diag('minicane', 0, 11.8, 20, 2, 0.6, 0.42, SIX, 0, 2),
-      ...[-1, 1].map((s) => line('toydrum', s * 3.2, 13.8, s * 11.6, 13.8, 10)),
+      ...[-1, 1].map((s) => line('holidaydrum', s * 3.2, 13.8, s * 11.6, 13.8, 10)),
       ...[-1, 1].map((s) => line('giftbow', s * 4.0, 15.6, s * 11.6, 15.6, 13)),
       ...[-1, 1].map((s) => at('giftstack', s * 12.2, 9.0, s < 0 ? 4 : 6)),
     ],
@@ -466,7 +466,7 @@ const LIST = [
       ...[-1, 1].map((s) => grid('toysled', s * 11.6, -1.4, 1, 2, 1.0, 1.4, 'cycle')),
       ...[-1, 1].map((s) => line('wreath', s * 4.6, -0.8, s * 8.0, -0.8, 2)),
       ...[-1, 1].map((s) => line('stocking', s * 4.4, 1.6, s * 8.4, 1.6, 5, SIX, 0)),
-      ...[-1, 1].map((s) => line('toydrum', s * 4.6, 3.6, s * 12.6, 3.6, 0)),
+      ...[-1, 1].map((s) => line('holidaydrum', s * 4.6, 3.6, s * 12.6, 3.6, 0)),
       carpet('giftbox', 'bauble', -7.0, 7.4, 9, 4, GB, GB, EIGHT, SEVEN, 1, 2, 2),
       carpet('giftbox', 'bauble', 7.0, 7.4, 9, 4, GB, GB, EIGHT, SEVEN, 1, 6, 1),
       ...diag('minicane', 0, 11.4, 22, 2, 0.6, 0.42, SIX, 0, 2),
