@@ -25,11 +25,14 @@ export function patchGround(mat) {
 
 // Props: per-instance tint only on TINT parts (tmask), and everything darkens as it
 // sinks below ground level so falling things fade into the dark of the shaft.
-export function patchProps(mat) {
+// { sink: false } skips the darkening (HUD icons draw props centered on y = 0).
+export function patchProps(mat, { sink = true } = {}) {
   mat.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float tmask;\nvarying float vWY;')
-      .replace('vColor.xyz *= instanceColor.xyz;', 'vColor.xyz *= mix(vec3(1.0), instanceColor.xyz, tmask);')
+      // Expand color_vertex here: the chunk is still an #include at this point, so a plain
+      // replace on its body would never match (that bug tinted every part of every prop).
+      .replace('#include <color_vertex>', THREE.ShaderChunk.color_vertex.replace('vColor.xyz *= instanceColor.xyz;', 'vColor.xyz *= mix(vec3(1.0), instanceColor.xyz, tmask);'))
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         #ifdef USE_INSTANCING
           vWY = (modelMatrix * instanceMatrix * vec4(position, 1.0)).y;
@@ -40,7 +43,7 @@ export function patchProps(mat) {
       .replace('#include <common>', '#include <common>\nvarying float vWY;')
       .replace('#include <dithering_fragment>', '#include <dithering_fragment>\ngl_FragColor.rgb *= clamp(1.0 + vWY * 0.32, 0.04, 1.0);');
   };
-  mat.customProgramCacheKey = () => 'props-tint';
+  mat.customProgramCacheKey = () => 'props-tint-mask';
   return mat;
 }
 
