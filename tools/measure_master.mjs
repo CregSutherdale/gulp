@@ -10,7 +10,7 @@
 //                                                      in MASTER_RAISED with their formula value
 //   node tools/measure_master.mjs --from a.json,b.json reuse two existing CHALLENGE validate_cli --json
 //                                                      results instead of running the validator twice
-// Master seconds (TIGHT, 10/06: Amanda found Master easy) = max(25, ceil(Bbest / 0.88), ceil(Bslow + 1)):
+// Master seconds (TIGHT, 10/06: Amanda found Master easy) = max(20, ceil(Bbest / 0.88), ceil(Bslow + 1)):
 // the FASTER bot clear uses ~88% of the timer (85-90% band), never less time than the slower clear.
 // Headless only (validate_cli never opens a window). Exit 0 = table written/printed (and, with
 // --verify, every measured level passes Master).
@@ -28,7 +28,7 @@ const root = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace
 const MASTER_JS = path.join(root, 'src/game/master.js');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gulp-measure-'));
 const ceil5 = (x) => Math.ceil(x / 5 - 1e-9) * 5;
-const masterFromBot = (Bbest, Bslow) => Math.max(25, Math.ceil(Bbest / 0.88 - 1e-9), Math.ceil(Bslow + 1));
+const masterFromBot = (Bbest, Bslow) => Math.max(20, Math.ceil(Bbest / 0.88 - 1e-9), Math.ceil(Bslow + 1));
 
 function validate(extra, jsonFile) {
   return new Promise((resolve) => {
@@ -100,8 +100,11 @@ const table = {}, rows = [];
 for (const ra of a.res) {
   const rb = bById.get(ra.id); if (!rb) continue;
   const bothWon = ra.won && rb.won;
-  const B = Math.max(ra.used, rb.used);
-  table[ra.id] = masterFromBot(Math.min(ra.used, rb.used), B);
+  // A run the bot did not win (a rare bot stall) says nothing about clear time: use the other run.
+  const used = [ra, rb].filter((r) => r.won).map((r) => r.used);
+  if (!used.length) used.push(Math.max(ra.used, rb.used));
+  const B = Math.max(...used);
+  table[ra.id] = masterFromBot(Math.min(...used), B);
   rows.push({ id: ra.id, name: ra.name, a: ra.used, b: rb.used, B, challenge: ra.time, master: table[ra.id], bothWon });
 }
 console.log('\n id  level                   botA   botB   B      CHALL  MASTER');
