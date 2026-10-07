@@ -8,13 +8,14 @@
 import { TIMES, levelSetup } from './difficulty.js';
 
 const ceil5 = (x) => Math.ceil(x / 5 - 1e-9) * 5;
-// Master seconds from a measured bot clear time B (the slower of two CHALLENGE validator runs).
-export const masterFromBot = (B) => Math.max(25, ceil5(1.12 * B + 4));
+// Master seconds from two measured CHALLENGE bot clears (TIGHT, 10/06: Amanda beat Master easily):
+// the faster clear uses ~88% of the timer, and the timer is never shorter than the slower clear + 1 s.
+export const masterFromBot = (Bbest, Bslow = Bbest) => Math.max(25, Math.ceil(Bbest / 0.88 - 1e-9), Math.ceil(Bslow + 1));
 // Any level without a measured value (new seasons before they are measured): 80% of its CHALLENGE timer.
 export const masterFallback = (level) => Math.max(25, ceil5(0.8 * (TIMES[level.id] ?? level.time)));
 
-// Seconds per level, MASTER: ceil5(1.12 * B + 4), min 25. B = the slower of two CHALLENGE bot
-// clears (tools/measure_master.mjs). Levels in MASTER_RAISED needed more time for the careful
+// Seconds per level, MASTER: masterFromBot(faster, slower) of two CHALLENGE bot clears
+// (tools/measure_master.mjs). Levels in MASTER_RAISED needed more time for the careful
 // bot to win inside the Master timer (validate_cli --master) and were raised by hand.
 // MASTER_RAISED = { id: the formula value before raising }.
 // MASTER_TIMES:BEGIN (written by tools/measure_master.mjs --write)
